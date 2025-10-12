@@ -1,7 +1,5 @@
 package solver;
 
-import java.util.ArrayDeque;
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -17,13 +15,19 @@ public final class GBFS {
     private final SearchStats stats = new SearchStats();
     private final int rows;
     private final int cols;
-    private final boolean[][] visited;
+    private final int[][] visitStamp;
+    private int visitToken = 1;
     private final int[][] parentX;
     private final int[][] parentY;
     private final char[][] moveToHere;
-    private final int[][] boxIndex;
-    private final ArrayDeque<int[]> bfsQueue = new ArrayDeque<>();
+    private final int[][] boxStamp;
+    private final int[][] boxIds;
+    private int boxToken = 1;
+    private final int[] queueX;
+    private final int[] queueY;
     private final HashSet<Long> localSignatureBuffer = new HashSet<>();
+    private State bestFrontierCandidate;
+    private State deepestFrontierCandidate;
 
     private final Comparator<State> stateComparator = (a, b) -> {
         int cmp = Integer.compare(a.getFCost(), b.getFCost());
@@ -51,11 +55,14 @@ public final class GBFS {
         this.deadlockDetector = new Deadlock(mapData, goalCoordinates);
         this.rows = mapData.length;
         this.cols = rows == 0 ? 0 : mapData[0].length;
-        this.visited = new boolean[rows][cols];
+        this.visitStamp = new int[rows][cols];
         this.parentX = new int[rows][cols];
         this.parentY = new int[rows][cols];
         this.moveToHere = new char[rows][cols];
-        this.boxIndex = new int[rows][cols];
+        this.boxStamp = new int[rows][cols];
+        this.boxIds = new int[rows][cols];
+        this.queueX = new int[rows * cols];
+        this.queueY = new int[rows * cols];
     }
 
     public SearchOutcome search(State initial) {
@@ -72,7 +79,8 @@ public final class GBFS {
         open.add(initial);
 
         State bestGoal = initial.isGoal(goalCoordinates) ? initial : null;
-        State bestFrontier = initial;
+        bestFrontierCandidate = initial;
+        deepestFrontierCandidate = initial;
 
         while (!open.isEmpty()) {
             long now = System.nanoTime();
@@ -81,7 +89,7 @@ public final class GBFS {
             }
             State current = open.poll();
             stats.incrementExpanded();
-            bestFrontier = betterFrontier(current, bestFrontier);
+            updateFrontierCandidates(current);
 
             long signature = current.getHash();
             long encoded = encodeCost(current);
@@ -104,7 +112,8 @@ public final class GBFS {
         long finishTime = System.nanoTime();
         boolean limitHit = finishTime > deadline && !open.isEmpty();
 
-        State planState = bestGoal != null ? bestGoal : bestFrontier;
+        State fallback = selectFallbackState(bestGoal);
+        State planState = fallback;
         String plan = planState.reconstructPlan();
         boolean solved = bestGoal != null;
         String completePlan = solved ? plan : null;
@@ -122,14 +131,44 @@ public final class GBFS {
         return stats.snapshot();
     }
 
-    private State betterFrontier(State candidate, State incumbent) {
-        if (incumbent == null) {
-            return candidate;
+    private void updateFrontierCandidates(State candidate) {
+        if (candidate == null) {
+            return;
         }
-        if (stateComparator.compare(candidate, incumbent) < 0) {
-            return candidate;
+        if (bestFrontierCandidate == null || stateComparator.compare(candidate, bestFrontierCandidate) < 0) {
+            bestFrontierCandidate = candidate;
         }
-        return incumbent;
+        if (deepestFrontierCandidate == null) {
+            deepestFrontierCandidate = candidate;
+            return;
+        }
+        if (candidate.getPushes() > deepestFrontierCandidate.getPushes()) {
+            deepestFrontierCandidate = candidate;
+            return;
+        }
+        if (candidate.getPushes() == deepestFrontierCandidate.getPushes()) {
+            if (candidate.getDepth() > deepestFrontierCandidate.getDepth()) {
+                deepestFrontierCandidate = candidate;
+                return;
+            }
+            if (candidate.getDepth() == deepestFrontierCandidate.getDepth()
+                    && stateComparator.compare(candidate, deepestFrontierCandidate) < 0) {
+                deepestFrontierCandidate = candidate;
+            }
+        }
+    }
+
+    private State selectFallbackState(State bestGoal) {
+        if (bestGoal != null) {
+            return bestGoal;
+        }
+        if (deepestFrontierCandidate != null && deepestFrontierCandidate.getDepth() > 0) {
+            return deepestFrontierCandidate;
+        }
+        if (bestFrontierCandidate != null) {
+            return bestFrontierCandidate;
+        }
+        throw new IllegalStateException("Search did not record any frontier state");
     }
 
     private boolean isBetterGoal(State candidate, State incumbent) {
@@ -149,21 +188,24 @@ public final class GBFS {
         resetWorkingArrays(state);
         int startX = state.getPlayer().x;
         int startY = state.getPlayer().y;
-        visited[startY][startX] = true;
+        markVisited(startX, startY);
         parentX[startY][startX] = startX;
         parentY[startY][startX] = startY;
         moveToHere[startY][startX] = '\0';
-        bfsQueue.clear();
-        bfsQueue.add(new int[] {startY, startX});
+        int head = 0;
+        int tail = 0;
+        queueX[tail] = startX;
+        queueY[tail] = startY;
+        tail++;
         localSignatureBuffer.clear();
 
-        while (!bfsQueue.isEmpty()) {
+        while (head < tail) {
             if (System.nanoTime() > deadline) {
                 return;
             }
-            int[] cell = bfsQueue.removeFirst();
-            int py = cell[0];
-            int px = cell[1];
+            int px = queueX[head];
+            int py = queueY[head];
+            head++;
             considerPushesFrom(state, px, py, startX, startY, open, bestCosts);
             for (int dir = 0; dir < Constants.DIRECTION_X.length; dir++) {
                 int nx = px + Constants.DIRECTION_X[dir];
@@ -171,20 +213,22 @@ public final class GBFS {
                 if (!inBounds(nx, ny)) {
                     continue;
                 }
-                if (visited[ny][nx]) {
+                if (isVisited(nx, ny)) {
                     continue;
                 }
                 if (mapData[ny][nx] == Constants.WALL) {
                     continue;
                 }
-                if (boxIndex[ny][nx] != -1) {
+                if (hasBoxAt(nx, ny)) {
                     continue;
                 }
-                visited[ny][nx] = true;
+                markVisited(nx, ny);
                 parentX[ny][nx] = px;
                 parentY[ny][nx] = py;
                 moveToHere[ny][nx] = Constants.MOVES[dir];
-                bfsQueue.add(new int[] {ny, nx});
+                queueX[tail] = nx;
+                queueY[tail] = ny;
+                tail++;
             }
         }
     }
@@ -202,10 +246,10 @@ public final class GBFS {
             if (!inBounds(boxX, boxY)) {
                 continue;
             }
-            int boxIdx = boxIndex[boxY][boxX];
-            if (boxIdx == -1) {
+            if (!hasBoxAt(boxX, boxY)) {
                 continue;
             }
+            int boxIdx = boxIds[boxY][boxX];
             int destX = boxX + Constants.DIRECTION_X[dir];
             int destY = boxY + Constants.DIRECTION_Y[dir];
             if (!inBounds(destX, destY)) {
@@ -214,21 +258,13 @@ public final class GBFS {
             if (mapData[destY][destX] == Constants.WALL) {
                 continue;
             }
-            if (boxIndex[destY][destX] != -1) {
+            if (hasBoxAt(destX, destY)) {
                 continue;
             }
             char[] path = reconstructPath(startX, startY, px, py);
             State walkTail = appendWalkChain(state, path);
-            Coordinate[] updatedBoxes = new Coordinate[state.getBoxes().length];
-            Coordinate[] currentBoxes = state.getBoxes();
-            for (int i = 0; i < currentBoxes.length; i++) {
-                Coordinate c = currentBoxes[i];
-                if (i == boxIdx) {
-                    updatedBoxes[i] = new Coordinate(destX, destY);
-                } else {
-                    updatedBoxes[i] = c;
-                }
-            }
+            Coordinate[] updatedBoxes = state.getBoxes().clone();
+            updatedBoxes[boxIdx] = new Coordinate(destX, destY);
             Coordinate nextPlayer = new Coordinate(boxX, boxY);
             stats.recordPushCandidate();
             int heuristic = Heuristic.evaluate(nextPlayer, updatedBoxes);
@@ -253,6 +289,7 @@ public final class GBFS {
             }
             bestCosts.put(signature, encodedCost);
             open.add(pushState);
+            updateFrontierCandidates(pushState);
             stats.recordEnqueued(open.size());
         }
     }
@@ -274,21 +311,26 @@ public final class GBFS {
         if (startX == targetX && startY == targetY) {
             return new char[0];
         }
-        char[] buffer = new char[rows * cols];
         int length = 0;
         int cx = targetX;
         int cy = targetY;
         while (!(cx == startX && cy == startY)) {
-            char move = moveToHere[cy][cx];
-            buffer[length++] = move;
+            length++;
             int px = parentX[cy][cx];
             int py = parentY[cy][cx];
             cx = px;
             cy = py;
         }
         char[] path = new char[length];
-        for (int i = 0; i < length; i++) {
-            path[i] = buffer[length - 1 - i];
+        cx = targetX;
+        cy = targetY;
+        for (int idx = length - 1; idx >= 0; idx--) {
+            char move = moveToHere[cy][cx];
+            path[idx] = move;
+            int px = parentX[cy][cx];
+            int py = parentY[cy][cx];
+            cx = px;
+            cy = py;
         }
         return path;
     }
@@ -309,20 +351,40 @@ public final class GBFS {
     }
 
     private void resetWorkingArrays(State state) {
-        for (int y = 0; y < rows; y++) {
-            Arrays.fill(visited[y], false);
-            Arrays.fill(parentX[y], -1);
-            Arrays.fill(parentY[y], -1);
-            Arrays.fill(moveToHere[y], '\0');
-            Arrays.fill(boxIndex[y], -1);
+        visitToken++;
+        if (visitToken == Integer.MAX_VALUE) {
+            for (int y = 0; y < rows; y++) {
+                java.util.Arrays.fill(visitStamp[y], 0);
+            }
+            visitToken = 1;
+        }
+        boxToken++;
+        if (boxToken == Integer.MAX_VALUE) {
+            for (int y = 0; y < rows; y++) {
+                java.util.Arrays.fill(boxStamp[y], 0);
+            }
+            boxToken = 1;
         }
         Coordinate[] boxes = state.getBoxes();
         for (int i = 0; i < boxes.length; i++) {
             Coordinate b = boxes[i];
             if (inBounds(b.x, b.y)) {
-                boxIndex[b.y][b.x] = i;
+                boxStamp[b.y][b.x] = boxToken;
+                boxIds[b.y][b.x] = i;
             }
         }
+    }
+
+    private void markVisited(int x, int y) {
+        visitStamp[y][x] = visitToken;
+    }
+
+    private boolean isVisited(int x, int y) {
+        return visitStamp[y][x] == visitToken;
+    }
+
+    private boolean hasBoxAt(int x, int y) {
+        return inBounds(x, y) && boxStamp[y][x] == boxToken;
     }
 
     private boolean inBounds(int x, int y) {
