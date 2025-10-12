@@ -84,13 +84,6 @@ public class Deadlock {
     }
 
     private boolean isWallLineDeadlock(Coordinate box) {
-        if (checkWallLine(box, -1, 0) || checkWallLine(box, 1, 0)) {
-            return true;
-        }
-
-        if (checkWallLine(box, 0, -1) || checkWallLine(box, 0, 1)) {
-            return true;
-        }
 
         return false;
     }
@@ -142,76 +135,5 @@ public class Deadlock {
         return boxes > 0;
     }
 
-    private boolean isWallOrBoundary(int x, int y) {
-        if (y < 0 || y >= mapData.length || x < 0 || x >= mapData[0].length) {
-            return true;
-        }
-        return mapData[y][x] == Constants.WALL;
-    }
 
-    private boolean checkWallLine(Coordinate box, int wallDx, int wallDy) {
-        int wallX = box.x + wallDx;
-        int wallY = box.y + wallDy;
-        if (!isWallOrBoundary(wallX, wallY)) {
-            return false;
-        }
-
-        ScanResult first = scanDirection(box.x, box.y, -wallDy, wallDx, wallDx, wallDy);
-        ScanResult second = scanDirection(box.x, box.y, wallDy, -wallDx, wallDx, wallDy);
-
-        boolean open = first.open || second.open;
-        boolean goalSeen = first.goalSeen || second.goalSeen;
-
-        return !open && !goalSeen && !goalInRowOrColumn(box, wallDx, wallDy);
-    }
-
-    private boolean goalInRowOrColumn(Coordinate box, int wallDx, int wallDy) {
-        if (wallDx != 0) {
-            return goalInColumn(box.x);
-        }
-        if (wallDy != 0) {
-            return goalInRow(box.y);
-        }
-        return false;
-    }
-
-    private ScanResult scanDirection(int startX, int startY, int stepX, int stepY, int wallDx, int wallDy) {
-        int cx = startX;
-        int cy = startY;
-        boolean goalSeen = false;
-
-        while (true) {
-            int nextX = cx + stepX;
-            int nextY = cy + stepY;
-
-            if (nextX < 0 || nextX >= mapData[0].length || nextY < 0 || nextY >= mapData.length) {
-                return new ScanResult(false, goalSeen);
-            }
-
-            if (mapData[nextY][nextX] == Constants.WALL) {
-                return new ScanResult(false, goalSeen);
-            }
-
-            cx = nextX;
-            cy = nextY;
-
-            if (!isWallOrBoundary(cx + wallDx, cy + wallDy)) {
-                return new ScanResult(true, goalSeen || isGoal[cy][cx]);
-            }
-
-            if (isGoal[cy][cx]) {
-                goalSeen = true;
-            }
-        }
-    }
-
-    private static class ScanResult {
-        final boolean open;
-        final boolean goalSeen;
-
-        ScanResult(boolean open, boolean goalSeen) {
-            this.open = open;
-            this.goalSeen = goalSeen;
-        }
-    }
 }
