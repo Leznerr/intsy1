@@ -1,10 +1,12 @@
 package solver;
 
-public class Constants {
+public final class Constants {
+    private Constants() {}
+
     public static final int[] DIRECTION_X = {0, 0, -1, 1};
     public static final int[] DIRECTION_Y = {-1, 1, 0, 0};
     public static final char[] MOVES = {'u', 'd', 'l', 'r'};
-    
+
     public static final char WALL = '#';
     public static final char GOAL = '.';
     public static final char BOX = '$';
@@ -16,6 +18,8 @@ public class Constants {
     public static final int DOWN = 1;
     public static final int LEFT = 2;
     public static final int RIGHT = 3;
-    
-    private Constants() {};
+
+    public static final long TIME_BUDGET_MS = 14_000L;
+    public static final boolean DEBUG_METRICS = false;
+    public static final boolean DEBUG_LOG = false;
 }
