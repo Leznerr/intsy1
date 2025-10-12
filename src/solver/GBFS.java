@@ -186,6 +186,40 @@ public class GBFS {
             if (idx == -1) {
                 continue;
             }
+        }
+
+        Queue<int[]> queue = new ArrayDeque<>();
+        List<int[]> reachable = new ArrayList<>();
+
+        int startX = state.playerCoordinate.x;
+        int startY = state.playerCoordinate.y;
+        queue.add(new int[]{startY, startX});
+        visited[startY][startX] = true;
+        parentX[startY][startX] = startX;
+        parentY[startY][startX] = startY;
+        reachable.add(new int[]{startY, startX});
+
+        while (!queue.isEmpty()) {
+            int[] cur = queue.poll();
+            int cy = cur[0];
+            int cx = cur[1];
+
+            for (int dir = 0; dir < Constants.DIRECTION_X.length; dir++) {
+                int nx = cx + Constants.DIRECTION_X[dir];
+                int ny = cy + Constants.DIRECTION_Y[dir];
+
+                if (nx < 0 || nx >= cols || ny < 0 || ny >= rows) {
+                    continue;
+                }
+                if (visited[ny][nx]) {
+                    continue;
+                }
+                if (mapData[ny][nx] == Constants.WALL) {
+                    continue;
+                }
+                if (boxIndex[ny][nx] != -1) {
+                    continue;
+                }
 
             int destX = boxX + Constants.DIRECTION_X[dir];
             int destY = boxY + Constants.DIRECTION_Y[dir];
