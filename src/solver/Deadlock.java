@@ -70,28 +70,12 @@ public class Deadlock {
         boolean left = isBlocking(box.x - 1, box.y);
         boolean right = isBlocking(box.x + 1, box.y);
 
-        return (up && left) || (up && right) || (down && left) || (down && right);
-    }
-
-    private boolean isTwoByTwoDeadlock(Coordinate box) {
-        int[][] offsets = {{0,0},{-1,0},{0,-1},{-1,-1}};
-        for (int[] offset : offsets) {
-            if (isSolidSquare(box.x + offset[0], box.y + offset[1])) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private boolean isWallLineDeadlock(Coordinate box) {
-
-        return false;
     }
 
     private boolean goalInRow(int row) {
         if (row < 0 || row >= goalRow.length){
             return false;
-        } 
+        }
 
         return goalRow[row];
     }
