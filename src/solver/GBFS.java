@@ -18,6 +18,7 @@ public class GBFS {
 
     private final char[][] mapData;
     private final Coordinate[] goalCoordinates;
+    private final SearchStats stats = new SearchStats();
     private final Comparator<State> stateComparator = (a, b) -> {
         int cmp = Integer.compare(a.getCachedHeuristic(), b.getCachedHeuristic());
         if (cmp != 0) {
@@ -56,23 +57,30 @@ public class GBFS {
         Map<Long, Long> bestCosts = new HashMap<>();
 
         long startTime = System.nanoTime();
+        stats.reset(TIME_LIMIT_NANOS);
+        stats.markStart(startTime);
         String bestPlan = "";
         int bestPlanLength = Integer.MAX_VALUE;
 
         long initialSignature = computeSignature(initial);
         bestCosts.put(initialSignature, encodeCost(initial));
         open.add(initial);
+        stats.recordEnqueued(open.size());
 
+        boolean timeLimitHit = false;
         while (!open.isEmpty()){
             if (System.nanoTime() - startTime >= TIME_LIMIT_NANOS) {
+                timeLimitHit = true;
                 break;
             }
 
             State current = open.poll();
+            stats.incrementExpanded();
             long signature = computeSignature(current);
             long encodedCost = encodeCost(current);
             Long recorded = bestCosts.get(signature);
             if (recorded != null && recorded.longValue() != encodedCost) {
+                stats.recordDuplicatePruned();
                 continue;
             }
 
@@ -82,12 +90,15 @@ public class GBFS {
                     bestPlan = plan;
                     bestPlanLength = plan.length();
                 }
+                stats.updateBestPlanLength(plan.length());
                 continue;
             }
 
             expand(current, open, bestCosts);
         }
 
+        int recordedPlanLength = (bestPlanLength == Integer.MAX_VALUE) ? -1 : bestPlanLength;
+        stats.markFinish(System.nanoTime(), timeLimitHit, recordedPlanLength);
         return bestPlanLength == Integer.MAX_VALUE ? "" : bestPlan;
     }
 
@@ -206,15 +217,18 @@ public class GBFS {
 
                 Coordinate newPlayer = new Coordinate(boxX, boxY);
                 char pushMove = Constants.MOVES[dir];
+                stats.recordPushCandidate();
                 State pushState = tail.spawnPushState(newPlayer, newBoxes, pushMove);
 
                 long stateSignature = computeSignature(pushState);
                 if (!localSignatures.add(stateSignature)) {
+                    stats.recordDuplicatePruned();
                     continue;
                 }
 
                 Deadlock deadlock = new Deadlock(pushState, mapData, goalCoordinates);
                 if (deadlock.isDeadlock()) {
+                    stats.recordDeadlockPruned();
                     continue;
                 }
 
@@ -223,11 +237,13 @@ public class GBFS {
                 long encodedCost = encodeCost(pushState);
                 Long previous = bestCosts.get(stateSignature);
                 if (previous != null && !isBetterCost(encodedCost, previous)) {
+                    stats.recordDuplicatePruned();
                     continue;
                 }
 
                 bestCosts.put(stateSignature, encodedCost);
                 open.add(pushState);
+                stats.recordEnqueued(open.size());
             }
         }
     }
@@ -319,5 +335,9 @@ public class GBFS {
             }
         }
         return Integer.compare(movesA.length(), movesB.length());
+    }
+
+    public SearchStats getStatistics() {
+        return stats.snapshot();
     }
 }

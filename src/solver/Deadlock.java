@@ -65,11 +65,26 @@ public class Deadlock {
     }
 
     private boolean isCornerDeadlock(Coordinate box){
-        boolean up = isBlocking(box.x, box.y - 1);
-        boolean down = isBlocking(box.x, box.y + 1);
-        boolean left = isBlocking(box.x - 1, box.y);
-        boolean right = isBlocking(box.x + 1, box.y);
+        boolean up = actsAsRigidObstacle(box.x, box.y - 1, 0, -1);
+        boolean down = actsAsRigidObstacle(box.x, box.y + 1, 0, 1);
+        boolean left = actsAsRigidObstacle(box.x - 1, box.y, -1, 0);
+        boolean right = actsAsRigidObstacle(box.x + 1, box.y, 1, 0);
 
+        return (up && left) || (up && right) || (down && left) || (down && right);
+    }
+
+    private boolean isTwoByTwoDeadlock(Coordinate box) {
+        int[][] offsets = {{0,0},{-1,0},{0,-1},{-1,-1}};
+        for (int[] offset : offsets) {
+            if (isSolidSquare(box.x + offset[0], box.y + offset[1])) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isWallLineDeadlock(Coordinate box) {
+        return isClosedCorridor(box, true) || isClosedCorridor(box, false);
     }
 
     private boolean goalInRow(int row) {
@@ -101,6 +116,22 @@ public class Deadlock {
         return false;
     }
 
+    private boolean actsAsRigidObstacle(int x, int y, int towardX, int towardY) {
+        if (isWallOrBoundary(x, y)) {
+            return true;
+        }
+
+        if (!state.hasBoxAt(x, y) || isGoal[y][x]) {
+            return false;
+        }
+
+        if (towardX != 0) {
+            return isWallOrBoundary(x, y - 1) && isWallOrBoundary(x, y + 1);
+        }
+
+        return isWallOrBoundary(x - 1, y) && isWallOrBoundary(x + 1, y);
+    }
+
     private boolean isSolidSquare(int startX, int startY) {
         int boxes = 0;
         for (int dy = 0; dy < 2; dy++) {
@@ -119,5 +150,99 @@ public class Deadlock {
         return boxes > 0;
     }
 
+    private boolean isWallOrBoundary(int x, int y) {
+        if (y < 0 || y >= mapData.length || x < 0 || x >= mapData[0].length) {
+            return true;
+        }
+        return mapData[y][x] == Constants.WALL;
+    }
 
+    private boolean isClosedCorridor(Coordinate box, boolean horizontal) {
+        int side1x;
+        int side1y;
+        int side2x;
+        int side2y;
+
+        if (horizontal) {
+            side1x = 0;
+            side1y = -1;
+            side2x = 0;
+            side2y = 1;
+        } else {
+            side1x = -1;
+            side1y = 0;
+            side2x = 1;
+            side2y = 0;
+        }
+
+        if (!isWallOrBoundary(box.x + side1x, box.y + side1y) || !isWallOrBoundary(box.x + side2x, box.y + side2y)) {
+            return false;
+        }
+
+        LineCheck negative = walkCorridor(box.x, box.y,
+                horizontal ? -1 : 0,
+                horizontal ? 0 : -1,
+                side1x, side1y, side2x, side2y);
+        LineCheck positive = walkCorridor(box.x, box.y,
+                horizontal ? 1 : 0,
+                horizontal ? 0 : 1,
+                side1x, side1y, side2x, side2y);
+
+        if (negative.goalFound || positive.goalFound) {
+            return false;
+        }
+
+        if (!negative.closed || !positive.closed) {
+            return false;
+        }
+
+        if (horizontal) {
+            return !goalInRow(box.y);
+        }
+
+        return !goalInColumn(box.x);
+    }
+
+    private LineCheck walkCorridor(int startX, int startY, int stepX, int stepY, int side1x, int side1y, int side2x, int side2y) {
+        int cx = startX + stepX;
+        int cy = startY + stepY;
+
+        while (true) {
+            if (cx < 0 || cy < 0 || cy >= mapData.length || cx >= mapData[0].length) {
+                return new LineCheck(true, false);
+            }
+
+            if (!isWallOrBoundary(cx + side1x, cy + side1y) || !isWallOrBoundary(cx + side2x, cy + side2y)) {
+                return new LineCheck(false, false);
+            }
+
+            if (mapData[cy][cx] == Constants.WALL) {
+                return new LineCheck(true, false);
+            }
+
+            if (!state.hasBoxAt(cx, cy)) {
+                if (isGoal[cy][cx]) {
+                    return new LineCheck(false, true);
+                }
+                return new LineCheck(false, false);
+            }
+
+            if (isGoal[cy][cx]) {
+                return new LineCheck(false, true);
+            }
+
+            cx += stepX;
+            cy += stepY;
+        }
+    }
+
+    private static final class LineCheck {
+        final boolean closed;
+        final boolean goalFound;
+
+        LineCheck(boolean closed, boolean goalFound) {
+            this.closed = closed;
+            this.goalFound = goalFound;
+        }
+    }
 }
