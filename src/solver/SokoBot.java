@@ -67,4 +67,11 @@ public class SokoBot {
   public SearchStats getLastStats() {
     return lastStats;
   }
+
+  /**
+   * Returns an immutable snapshot of metrics gathered during the latest search invocation.
+   */
+  public SearchStats getLastStats() {
+    return lastStats;
+  }
 }
