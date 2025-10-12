@@ -74,10 +74,10 @@ public final class Deadlock {
     }
 
     private boolean isCorner(int x, int y) {
-        boolean up = isBlocked(x, y - 1);
-        boolean down = isBlocked(x, y + 1);
-        boolean left = isBlocked(x - 1, y);
-        boolean right = isBlocked(x + 1, y);
+        boolean up = isWallOrOutOfBounds(x, y - 1);
+        boolean down = isWallOrOutOfBounds(x, y + 1);
+        boolean left = isWallOrOutOfBounds(x - 1, y);
+        boolean right = isWallOrOutOfBounds(x + 1, y);
         return (up && left) || (up && right) || (down && left) || (down && right);
     }
 
@@ -88,10 +88,14 @@ public final class Deadlock {
         if (mapData[y][x] == Constants.WALL) {
             return true;
         }
-        if (hasBox(x, y) && !isGoal(x, y)) {
+        return hasBox(x, y) && !isGoal(x, y);
+    }
+
+    private boolean isWallOrOutOfBounds(int x, int y) {
+        if (!inBounds(x, y)) {
             return true;
         }
-        return false;
+        return mapData[y][x] == Constants.WALL;
     }
 
     private boolean isFrozenSquare(int x, int y) {
@@ -128,8 +132,10 @@ public final class Deadlock {
     }
 
     private boolean isCorridorTrap(Coordinate box) {
-        boolean verticalWalls = isRigidWall(box.x - 1, box.y) && isRigidWall(box.x + 1, box.y);
-        boolean horizontalWalls = isRigidWall(box.x, box.y - 1) && isRigidWall(box.x, box.y + 1);
+        boolean verticalWalls = isWallOrOutOfBounds(box.x - 1, box.y)
+                && isWallOrOutOfBounds(box.x + 1, box.y);
+        boolean horizontalWalls = isWallOrOutOfBounds(box.x, box.y - 1)
+                && isWallOrOutOfBounds(box.x, box.y + 1);
         if (!verticalWalls && !horizontalWalls) {
             return false;
         }
@@ -137,16 +143,6 @@ public final class Deadlock {
             return false;
         }
         return true;
-    }
-
-    private boolean isRigidWall(int x, int y) {
-        if (!inBounds(x, y)) {
-            return true;
-        }
-        if (mapData[y][x] == Constants.WALL) {
-            return true;
-        }
-        return hasBox(x, y) && !isGoal(x, y);
     }
 
     private boolean regionHasGoal(Coordinate startBox) {

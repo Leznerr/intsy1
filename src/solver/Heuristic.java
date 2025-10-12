@@ -81,38 +81,6 @@ public final class Heuristic {
         return assignment + proximity;
     }
 
-    public static int evaluate(State state) {
-        return evaluate(state.getPlayer(), state.getBoxes());
-    }
-
-    public static int evaluate(Coordinate player, Coordinate[] boxes) {
-        if (boxes.length == 0 || goalDistanceGrids.length == 0) {
-            return 0;
-        }
-        int boxCount = boxes.length;
-        int goalCount = goalDistanceGrids.length;
-        int size = Math.max(boxCount, goalCount);
-        int[][] cost = new int[size][size];
-        for (int i = 0; i < size; i++) {
-            Arrays.fill(cost[i], INF);
-        }
-        for (int b = 0; b < boxCount; b++) {
-            Coordinate box = boxes[b];
-            if (!inBounds(box.x, box.y)) {
-                continue;
-            }
-            for (int g = 0; g < goalCount; g++) {
-                cost[b][g] = goalDistanceGrids[g][box.y][box.x];
-            }
-        }
-        int assignment = hungarian(cost, size);
-        if (assignment >= INF) {
-            return Integer.MAX_VALUE;
-        }
-        int proximity = estimatePlayerProximity(player, boxes);
-        return assignment + proximity;
-    }
-
     private static void fillWithInf(int[][] grid) {
         for (int y = 0; y < grid.length; y++) {
             Arrays.fill(grid[y], INF);
