@@ -1,15 +1,11 @@
 package solver;
 
 import java.util.ArrayDeque;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
-import java.util.Queue;
-import java.util.Set;
 
 public class GBFS {
     private static final long TIME_LIMIT_NANOS = 14_000_000_000L;
@@ -20,6 +16,16 @@ public class GBFS {
     private final Coordinate[] goalCoordinates;
     private final Deadlock deadlockDetector;
     private final SearchStats stats = new SearchStats();
+    private final int rows;
+    private final int cols;
+    private final boolean[][] visited;
+    private final int[][] parentX;
+    private final int[][] parentY;
+    private final char[][] moveToHere;
+    private final int[][] boxIndex;
+    private final ArrayDeque<int[]> bfsQueue = new ArrayDeque<>();
+    private final ArrayDeque<int[]> coordinatePool = new ArrayDeque<>();
+    private final HashSet<Long> localSignatureBuffer = new HashSet<>();
     private final Comparator<State> stateComparator = (a, b) -> {
         int cmp = Integer.compare(a.getCachedHeuristic(), b.getCachedHeuristic());
         if (cmp != 0) {
@@ -48,6 +54,13 @@ public class GBFS {
         this.mapData = mapData;
         this.goalCoordinates = goalCoordinates;
         this.deadlockDetector = new Deadlock(mapData, goalCoordinates);
+        this.rows = mapData.length;
+        this.cols = rows == 0 ? 0 : mapData[0].length;
+        this.visited = new boolean[rows][cols];
+        this.parentX = new int[rows][cols];
+        this.parentY = new int[rows][cols];
+        this.moveToHere = new char[rows][cols];
+        this.boxIndex = new int[rows][cols];
     }
 
     public String search(State initial){
@@ -105,28 +118,73 @@ public class GBFS {
     }
 
     private void expand(State state, PriorityQueue<State> open, Map<Long, Long> bestCosts) {
-        int rows = mapData.length;
-        int cols = mapData[0].length;
+        resetWorkingArrays();
+        markBoxes(state);
 
-        boolean[][] visited = new boolean[rows][cols];
-        int[][] parentX = new int[rows][cols];
-        int[][] parentY = new int[rows][cols];
-        char[][] moveToHere = new char[rows][cols];
+        int startX = state.playerCoordinate.x;
+        int startY = state.playerCoordinate.y;
 
-        for (int y = 0; y < rows; y++) {
-            java.util.Arrays.fill(parentX[y], -1);
-            java.util.Arrays.fill(parentY[y], -1);
+        visited[startY][startX] = true;
+        parentX[startY][startX] = startX;
+        parentY[startY][startX] = startY;
+        moveToHere[startY][startX] = '\0';
+
+        enqueueCell(startY, startX);
+        localSignatureBuffer.clear();
+
+        while (!bfsQueue.isEmpty()) {
+            int[] cell = bfsQueue.removeFirst();
+            int py = cell[0];
+            int px = cell[1];
+
+            considerPushesFrom(state, px, py, startX, startY, open, bestCosts);
+
+            for (int dir = 0; dir < Constants.DIRECTION_X.length; dir++) {
+                int nx = px + Constants.DIRECTION_X[dir];
+                int ny = py + Constants.DIRECTION_Y[dir];
+
+                if (nx < 0 || nx >= cols || ny < 0 || ny >= rows) {
+                    continue;
+                }
+                if (visited[ny][nx]) {
+                    continue;
+                }
+                if (mapData[ny][nx] == Constants.WALL) {
+                    continue;
+                }
+                if (boxIndex[ny][nx] != -1) {
+                    continue;
+                }
+
+                visited[ny][nx] = true;
+                parentX[ny][nx] = px;
+                parentY[ny][nx] = py;
+                moveToHere[ny][nx] = Constants.MOVES[dir];
+                enqueueCell(ny, nx);
+            }
+
+            releaseCell(cell);
         }
+    }
 
-        int[][] boxIndex = new int[rows][cols];
-        for (int y = 0; y < rows; y++) {
-            java.util.Arrays.fill(boxIndex[y], -1);
-        }
+    private void considerPushesFrom(State state,
+                                    int px,
+                                    int py,
+                                    int startX,
+                                    int startY,
+                                    PriorityQueue<State> open,
+                                    Map<Long, Long> bestCosts) {
+        for (int dir = 0; dir < Constants.DIRECTION_X.length; dir++) {
+            int boxX = px + Constants.DIRECTION_X[dir];
+            int boxY = py + Constants.DIRECTION_Y[dir];
 
-        for (int i = 0; i < state.boxCoordinates.length; i++) {
-            Coordinate b = state.boxCoordinates[i];
-            if (b.y >= 0 && b.y < rows && b.x >= 0 && b.x < cols) {
-                boxIndex[b.y][b.x] = i;
+            if (boxX < 0 || boxX >= cols || boxY < 0 || boxY >= rows) {
+                continue;
+            }
+
+            int idx = boxIndex[boxY][boxX];
+            if (idx == -1) {
+                continue;
             }
         }
 
@@ -163,90 +221,98 @@ public class GBFS {
                     continue;
                 }
 
-                visited[ny][nx] = true;
-                parentX[ny][nx] = cx;
-                parentY[ny][nx] = cy;
-                moveToHere[ny][nx] = Constants.MOVES[dir];
-                queue.add(new int[]{ny, nx});
-                reachable.add(new int[]{ny, nx});
+            int destX = boxX + Constants.DIRECTION_X[dir];
+            int destY = boxY + Constants.DIRECTION_Y[dir];
+
+            if (destX < 0 || destX >= cols || destY < 0 || destY >= rows) {
+                continue;
             }
+            if (mapData[destY][destX] == Constants.WALL) {
+                continue;
+            }
+            if (boxIndex[destY][destX] != -1) {
+                continue;
+            }
+
+            char[] path = reconstructPath(parentX, parentY, moveToHere, startX, startY, px, py);
+            State tail = buildWalkChain(state, path);
+
+            Coordinate[] newBoxes = new Coordinate[state.boxCoordinates.length];
+            for (int b = 0; b < state.boxCoordinates.length; b++) {
+                Coordinate original = state.boxCoordinates[b];
+                if (b == idx) {
+                    newBoxes[b] = new Coordinate(destX, destY);
+                } else {
+                    newBoxes[b] = new Coordinate(original.x, original.y);
+                }
+            }
+
+            Coordinate newPlayer = new Coordinate(boxX, boxY);
+            char pushMove = Constants.MOVES[dir];
+            stats.recordPushCandidate();
+            State pushState = tail.spawnPushState(newPlayer, newBoxes, pushMove);
+
+            long stateSignature = computeSignature(pushState);
+            if (!localSignatureBuffer.add(stateSignature)) {
+                stats.recordDuplicatePruned();
+                continue;
+            }
+
+            if (deadlockDetector.isDeadlock(pushState)) {
+                stats.recordDeadlockPruned();
+                continue;
+            }
+
+            pushState.setCachedHeuristic(Heuristic.evaluate(pushState));
+
+            long encodedCost = encodeCost(pushState);
+            Long previous = bestCosts.get(stateSignature);
+            if (previous != null && !isBetterCost(encodedCost, previous)) {
+                stats.recordDuplicatePruned();
+                continue;
+            }
+
+            bestCosts.put(stateSignature, encodedCost);
+            open.add(pushState);
+            stats.recordEnqueued(open.size());
+        }
+    }
+
+    private void resetWorkingArrays() {
+        for (int y = 0; y < rows; y++) {
+            java.util.Arrays.fill(visited[y], false);
+            java.util.Arrays.fill(parentX[y], -1);
+            java.util.Arrays.fill(parentY[y], -1);
+            java.util.Arrays.fill(moveToHere[y], '\0');
+            java.util.Arrays.fill(boxIndex[y], -1);
         }
 
-        Set<Long> localSignatures = new HashSet<>();
+        while (!bfsQueue.isEmpty()) {
+            coordinatePool.addLast(bfsQueue.removeFirst());
+        }
+    }
 
-        for (int[] cell : reachable) {
-            int py = cell[0];
-            int px = cell[1];
-
-            for (int dir = 0; dir < Constants.DIRECTION_X.length; dir++) {
-                int boxX = px + Constants.DIRECTION_X[dir];
-                int boxY = py + Constants.DIRECTION_Y[dir];
-
-                if (boxX < 0 || boxX >= cols || boxY < 0 || boxY >= rows) {
-                    continue;
-                }
-
-                int idx = boxIndex[boxY][boxX];
-                if (idx == -1) {
-                    continue;
-                }
-
-                int destX = boxX + Constants.DIRECTION_X[dir];
-                int destY = boxY + Constants.DIRECTION_Y[dir];
-
-                if (destX < 0 || destX >= cols || destY < 0 || destY >= rows) {
-                    continue;
-                }
-                if (mapData[destY][destX] == Constants.WALL) {
-                    continue;
-                }
-                if (boxIndex[destY][destX] != -1) {
-                    continue;
-                }
-
-                char[] path = reconstructPath(parentX, parentY, moveToHere, startX, startY, px, py);
-                State tail = buildWalkChain(state, path);
-
-                Coordinate[] newBoxes = new Coordinate[state.boxCoordinates.length];
-                for (int b = 0; b < state.boxCoordinates.length; b++) {
-                    Coordinate original = state.boxCoordinates[b];
-                    if (b == idx) {
-                        newBoxes[b] = new Coordinate(destX, destY);
-                    } else {
-                        newBoxes[b] = new Coordinate(original.x, original.y);
-                    }
-                }
-
-                Coordinate newPlayer = new Coordinate(boxX, boxY);
-                char pushMove = Constants.MOVES[dir];
-                stats.recordPushCandidate();
-                State pushState = tail.spawnPushState(newPlayer, newBoxes, pushMove);
-
-                long stateSignature = computeSignature(pushState);
-                if (!localSignatures.add(stateSignature)) {
-                    stats.recordDuplicatePruned();
-                    continue;
-                }
-
-                if (deadlockDetector.isDeadlock(pushState)) {
-                    stats.recordDeadlockPruned();
-                    continue;
-                }
-
-                pushState.setCachedHeuristic(Heuristic.evaluate(pushState));
-
-                long encodedCost = encodeCost(pushState);
-                Long previous = bestCosts.get(stateSignature);
-                if (previous != null && !isBetterCost(encodedCost, previous)) {
-                    stats.recordDuplicatePruned();
-                    continue;
-                }
-
-                bestCosts.put(stateSignature, encodedCost);
-                open.add(pushState);
-                stats.recordEnqueued(open.size());
+    private void markBoxes(State state) {
+        for (int i = 0; i < state.boxCoordinates.length; i++) {
+            Coordinate b = state.boxCoordinates[i];
+            if (b.y >= 0 && b.y < rows && b.x >= 0 && b.x < cols) {
+                boxIndex[b.y][b.x] = i;
             }
         }
+    }
+
+    private void enqueueCell(int y, int x) {
+        int[] cell = coordinatePool.pollFirst();
+        if (cell == null) {
+            cell = new int[2];
+        }
+        cell[0] = y;
+        cell[1] = x;
+        bfsQueue.addLast(cell);
+    }
+
+    private void releaseCell(int[] cell) {
+        coordinatePool.addLast(cell);
     }
 
     private State buildWalkChain(State origin, char[] moves) {
