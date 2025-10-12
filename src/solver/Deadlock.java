@@ -1,247 +1,198 @@
 package solver;
 
-public class Deadlock {
+import java.util.ArrayDeque;
+import java.util.Queue;
+
+public final class Deadlock {
     private final char[][] mapData;
-    private final boolean[][] isGoal;
-    private final boolean[] goalRow;
-    private final boolean[] goalCol;
+    private final boolean[][] goal;
     private final int rows;
     private final int cols;
+    private final int[][] boxStamp;
+    private int boxStampToken = 1;
+    private final int[][] regionStamp;
+    private int regionToken = 1;
 
     public Deadlock(char[][] mapData, Coordinate[] goalCoordinates) {
         this.mapData = mapData;
-
         this.rows = mapData.length;
-        this.cols = this.rows == 0 ? 0 : mapData[0].length;
-
-        this.isGoal = new boolean[this.rows][this.cols];
-        this.goalRow = new boolean[this.rows];
-        this.goalCol = new boolean[this.cols];
-
-        if (goalCoordinates == null) {
-            throw new IllegalArgumentException("Goal coordinates must be supplied to deadlock detection");
-        }
-
+        this.cols = rows == 0 ? 0 : mapData[0].length;
+        this.goal = new boolean[rows][cols];
         for (Coordinate g : goalCoordinates) {
-            if (g.y >= 0 && g.y < this.rows && g.x >= 0 && g.x < this.cols) {
-                isGoal[g.y][g.x] = true;
-                goalRow[g.y] = true;
-                goalCol[g.x] = true;
+            if (inBounds(g.x, g.y)) {
+                goal[g.y][g.x] = true;
             }
         }
+        this.boxStamp = new int[rows][cols];
+        this.regionStamp = new int[rows][cols];
     }
 
     public boolean isDeadlock(State state) {
-        for (Coordinate box : state.boxCoordinates) {
-            if (isBoxInGoal(box)) {
+        markBoxes(state);
+        for (Coordinate box : state.getBoxes()) {
+            if (isGoal(box.x, box.y)) {
                 continue;
             }
-
-            if (isCornerDeadlock(state, box)) {
+            if (isCorner(box.x, box.y)) {
                 return true;
             }
-
-            if (isTwoByTwoDeadlock(state, box)) {
+            if (isFrozenSquare(box.x, box.y)) {
                 return true;
             }
-
-            if (isWallLineDeadlock(state, box)) {
+            if (isCorridorTrap(box)) {
                 return true;
             }
         }
-
         return false;
     }
 
-    private boolean isBoxInGoal(Coordinate box) {
-        if (box.y < 0 || box.y >= rows) {
-            return false;
+    private void markBoxes(State state) {
+        advanceBoxStamp();
+        for (Coordinate box : state.getBoxes()) {
+            if (inBounds(box.x, box.y)) {
+                boxStamp[box.y][box.x] = boxStampToken;
+            }
         }
-        if (box.x < 0 || box.x >= cols) {
-            return false;
-        }
-        return isGoal[box.y][box.x];
     }
 
-    private boolean isCornerDeadlock(State state, Coordinate box) {
-        boolean up = actsAsRigidObstacle(state, box.x, box.y - 1, 0, -1);
-        boolean down = actsAsRigidObstacle(state, box.x, box.y + 1, 0, 1);
-        boolean left = actsAsRigidObstacle(state, box.x - 1, box.y, -1, 0);
-        boolean right = actsAsRigidObstacle(state, box.x + 1, box.y, 1, 0);
+    private void advanceBoxStamp() {
+        boxStampToken++;
+        if (boxStampToken == Integer.MAX_VALUE) {
+            for (int y = 0; y < rows; y++) {
+                java.util.Arrays.fill(boxStamp[y], 0);
+            }
+            boxStampToken = 1;
+        }
+    }
 
+    private boolean hasBox(int x, int y) {
+        return inBounds(x, y) && boxStamp[y][x] == boxStampToken;
+    }
+
+    private boolean isGoal(int x, int y) {
+        return inBounds(x, y) && goal[y][x];
+    }
+
+    private boolean isCorner(int x, int y) {
+        boolean up = isWallOrOutOfBounds(x, y - 1);
+        boolean down = isWallOrOutOfBounds(x, y + 1);
+        boolean left = isWallOrOutOfBounds(x - 1, y);
+        boolean right = isWallOrOutOfBounds(x + 1, y);
         return (up && left) || (up && right) || (down && left) || (down && right);
     }
 
-    private boolean isTwoByTwoDeadlock(State state, Coordinate box) {
-        int[][] offsets = {{0, 0}, {-1, 0}, {0, -1}, {-1, -1}};
-        for (int[] offset : offsets) {
-            if (isSolidSquare(state, box.x + offset[0], box.y + offset[1])) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private boolean isWallLineDeadlock(State state, Coordinate box) {
-        return isClosedCorridor(state, box, true) || isClosedCorridor(state, box, false);
-    }
-
-    private boolean goalInRow(int row) {
-        if (row < 0 || row >= rows) {
-            return false;
-        }
-
-        return goalRow[row];
-    }
-
-    private boolean goalInColumn(int col) {
-        if (col < 0 || col >= cols) {
-            return false;
-        }
-
-        return goalCol[col];
-    }
-
-    private boolean isBlocking(State state, int x, int y) {
-        if (y < 0 || y >= rows || x < 0 || x >= cols) {
+    private boolean isBlocked(int x, int y) {
+        if (!inBounds(x, y)) {
             return true;
         }
         if (mapData[y][x] == Constants.WALL) {
             return true;
         }
-        if (state.hasBoxAt(x, y) && !isGoal[y][x]) {
-            return true;
-        }
-        return false;
+        return hasBox(x, y) && !isGoal(x, y);
     }
 
-    private boolean actsAsRigidObstacle(State state, int x, int y, int towardX, int towardY) {
-        if (isWallOrBoundary(x, y)) {
-            return true;
-        }
-
-        if (!state.hasBoxAt(x, y) || isGoal[y][x]) {
-            return false;
-        }
-
-        if (towardX != 0) {
-            return isWallOrBoundary(x, y - 1) && isWallOrBoundary(x, y + 1);
-        }
-
-        return isWallOrBoundary(x - 1, y) && isWallOrBoundary(x + 1, y);
-    }
-
-    private boolean isSolidSquare(State state, int startX, int startY) {
-        int boxes = 0;
-        for (int dy = 0; dy < 2; dy++) {
-            for (int dx = 0; dx < 2; dx++) {
-                int x = startX + dx;
-                int y = startY + dy;
-                if (!isBlocking(state, x, y)) {
-                    return false;
-                }
-                if (y >= 0 && y < rows && x >= 0 && x < cols && state.hasBoxAt(x, y) && !isGoal[y][x]) {
-                    boxes++;
-                }
-            }
-        }
-        // Ensure there is at least one non-goal box in the block (our current box qualifies)
-        return boxes > 0;
-    }
-
-    private boolean isWallOrBoundary(int x, int y) {
-        if (y < 0 || y >= rows || x < 0 || x >= cols) {
+    private boolean isWallOrOutOfBounds(int x, int y) {
+        if (!inBounds(x, y)) {
             return true;
         }
         return mapData[y][x] == Constants.WALL;
     }
 
-    private boolean isClosedCorridor(State state, Coordinate box, boolean horizontal) {
-        int side1x;
-        int side1y;
-        int side2x;
-        int side2y;
-
-        if (horizontal) {
-            side1x = 0;
-            side1y = -1;
-            side2x = 0;
-            side2y = 1;
-        } else {
-            side1x = -1;
-            side1y = 0;
-            side2x = 1;
-            side2y = 0;
+    private boolean isFrozenSquare(int x, int y) {
+        int[][] offsets = {{0, 0}, {-1, 0}, {-1, -1}, {0, -1}};
+        for (int[] offset : offsets) {
+            if (formsTwoByTwo(offset[0] + x, offset[1] + y)) {
+                return true;
+            }
         }
-
-        if (!isWallOrBoundary(box.x + side1x, box.y + side1y) || !isWallOrBoundary(box.x + side2x, box.y + side2y)) {
-            return false;
-        }
-
-        LineCheck negative = walkCorridor(state, box.x, box.y,
-                horizontal ? -1 : 0,
-                horizontal ? 0 : -1,
-                side1x, side1y, side2x, side2y);
-        LineCheck positive = walkCorridor(state, box.x, box.y,
-                horizontal ? 1 : 0,
-                horizontal ? 0 : 1,
-                side1x, side1y, side2x, side2y);
-
-        if (negative.goalFound || positive.goalFound) {
-            return false;
-        }
-
-        if (!negative.closed || !positive.closed) {
-            return false;
-        }
-
-        if (horizontal) {
-            return !goalInRow(box.y);
-        }
-
-        return !goalInColumn(box.x);
+        return false;
     }
 
-    private LineCheck walkCorridor(State state, int startX, int startY, int stepX, int stepY, int side1x, int side1y, int side2x, int side2y) {
-        int cx = startX + stepX;
-        int cy = startY + stepY;
-
-        while (true) {
-            if (cx < 0 || cy < 0 || cy >= rows || cx >= cols) {
-                return new LineCheck(true, false);
-            }
-
-            if (!isWallOrBoundary(cx + side1x, cy + side1y) || !isWallOrBoundary(cx + side2x, cy + side2y)) {
-                return new LineCheck(false, false);
-            }
-
-            if (mapData[cy][cx] == Constants.WALL) {
-                return new LineCheck(true, false);
-            }
-
-            if (!state.hasBoxAt(cx, cy)) {
-                if (isGoal[cy][cx]) {
-                    return new LineCheck(false, true);
+    private boolean formsTwoByTwo(int startX, int startY) {
+        for (int dy = 0; dy < 2; dy++) {
+            for (int dx = 0; dx < 2; dx++) {
+                int x = startX + dx;
+                int y = startY + dy;
+                if (!isBlocked(x, y)) {
+                    return false;
                 }
-                return new LineCheck(false, false);
             }
-
-            if (isGoal[cy][cx]) {
-                return new LineCheck(false, true);
+        }
+        int boxes = 0;
+        for (int dy = 0; dy < 2; dy++) {
+            for (int dx = 0; dx < 2; dx++) {
+                int x = startX + dx;
+                int y = startY + dy;
+                if (hasBox(x, y) && !isGoal(x, y)) {
+                    boxes++;
+                }
             }
+        }
+        return boxes > 0;
+    }
 
-            cx += stepX;
-            cy += stepY;
+    private boolean isCorridorTrap(Coordinate box) {
+        boolean verticalWalls = isWallOrOutOfBounds(box.x - 1, box.y)
+                && isWallOrOutOfBounds(box.x + 1, box.y);
+        boolean horizontalWalls = isWallOrOutOfBounds(box.x, box.y - 1)
+                && isWallOrOutOfBounds(box.x, box.y + 1);
+        if (!verticalWalls && !horizontalWalls) {
+            return false;
+        }
+        if (regionHasGoal(box)) {
+            return false;
+        }
+        return true;
+    }
+
+    private boolean regionHasGoal(Coordinate startBox) {
+        advanceRegionToken();
+        Queue<int[]> queue = new ArrayDeque<>();
+        if (!inBounds(startBox.x, startBox.y)) {
+            return false;
+        }
+        regionStamp[startBox.y][startBox.x] = regionToken;
+        queue.add(new int[] {startBox.x, startBox.y});
+        while (!queue.isEmpty()) {
+            int[] cell = queue.remove();
+            int cx = cell[0];
+            int cy = cell[1];
+            if (goal[cy][cx]) {
+                return true;
+            }
+            for (int dir = 0; dir < Constants.DIRECTION_X.length; dir++) {
+                int nx = cx + Constants.DIRECTION_X[dir];
+                int ny = cy + Constants.DIRECTION_Y[dir];
+                if (!inBounds(nx, ny)) {
+                    continue;
+                }
+                if (regionStamp[ny][nx] == regionToken) {
+                    continue;
+                }
+                if (mapData[ny][nx] == Constants.WALL) {
+                    continue;
+                }
+                if (hasBox(nx, ny) && !(nx == startBox.x && ny == startBox.y)) {
+                    continue;
+                }
+                regionStamp[ny][nx] = regionToken;
+                queue.add(new int[] {nx, ny});
+            }
+        }
+        return false;
+    }
+
+    private void advanceRegionToken() {
+        regionToken++;
+        if (regionToken == Integer.MAX_VALUE) {
+            for (int y = 0; y < rows; y++) {
+                java.util.Arrays.fill(regionStamp[y], 0);
+            }
+            regionToken = 1;
         }
     }
 
-    private static final class LineCheck {
-        final boolean closed;
-        final boolean goalFound;
-
-        LineCheck(boolean closed, boolean goalFound) {
-            this.closed = closed;
-            this.goalFound = goalFound;
-        }
+    private boolean inBounds(int x, int y) {
+        return y >= 0 && y < rows && x >= 0 && x < cols;
     }
 }

@@ -1,103 +1,124 @@
 package solver;
 
-public class State {
-    private static final java.util.concurrent.atomic.AtomicLong NEXT_ID = new java.util.concurrent.atomic.AtomicLong(1L);
+import java.util.Arrays;
+import java.util.concurrent.atomic.AtomicLong;
 
-    public final Coordinate playerCoordinate;
-    public final Coordinate[] boxCoordinates;
-    public final boolean pushedLastMove;
-    public final char lastMove;
+public final class State {
+    private static final AtomicLong INSERTION_SEQUENCE = new AtomicLong(1L);
+
+    private final Coordinate player;
+    private final Coordinate[] boxes;
     private final State parent;
+    private final char lastMove;
+    private final boolean lastMovePush;
     private final int depth;
     private final int pushes;
-    private final long stateId;
+    private final int heuristic;
+    private final int fCost;
+    private final long insertionId;
+    private final long hash;
 
-    private int cachedHeuristic = Integer.MIN_VALUE;
-    private int cachedHash = 0;
-
-    public State(Coordinate playerCoordinate, Coordinate[] boxCoordinates){
-        this(playerCoordinate, boxCoordinates, true, null, false, '\0', 0, 0);
-    }
-
-    public State(Coordinate playerCoordinate,
-                 Coordinate[] boxCoordinates,
-                 boolean cloneBoxes,
-                 State parent,
-                 boolean pushedLastMove,
-                 char lastMove,
-                 int depth,
-                 int pushes){
-        this.playerCoordinate = playerCoordinate;
-        if (cloneBoxes) {
-            this.boxCoordinates = new Coordinate[boxCoordinates.length];
-            for (int i = 0; i < boxCoordinates.length; i++) {
-                Coordinate c = boxCoordinates[i];
-                this.boxCoordinates[i] = new Coordinate(c.x, c.y);
-            }
-            sortBoxes(this.boxCoordinates);
-        } else {
-            this.boxCoordinates = boxCoordinates;
-        }
+    private State(Coordinate player,
+                  Coordinate[] boxes,
+                  State parent,
+                  char lastMove,
+                  boolean lastMovePush,
+                  int depth,
+                  int pushes,
+                  int heuristic,
+                  long insertionId,
+                  long hash) {
+        this.player = player;
+        this.boxes = boxes;
         this.parent = parent;
-        this.pushedLastMove = pushedLastMove;
         this.lastMove = lastMove;
+        this.lastMovePush = lastMovePush;
         this.depth = depth;
         this.pushes = pushes;
-        this.stateId = NEXT_ID.getAndIncrement();
+        this.heuristic = heuristic;
+        this.fCost = heuristic == Integer.MAX_VALUE ? Integer.MAX_VALUE : pushes + heuristic;
+        this.insertionId = insertionId;
+        this.hash = hash;
     }
 
-    private static void sortBoxes(Coordinate[] boxes) {
-        java.util.Arrays.sort(boxes, (a, b) -> {
-            if (a.y != b.y) {
-                return Integer.compare(a.y, b.y);
-            }
-            return Integer.compare(a.x, b.x);
-        });
+    public static State initial(Coordinate player, Coordinate[] boxes, int heuristic) {
+        Coordinate[] orderedBoxes = copyAndSort(boxes);
+        long hash = computeHash(player, orderedBoxes);
+        return new State(player, orderedBoxes, null, '\0', false, 0, 0, heuristic, 0L, hash);
     }
 
-    public State spawnWalkState(Coordinate newPlayerCoordinate, char move) {
-        return new State(newPlayerCoordinate, this.boxCoordinates, false, this, false, move, this.depth + 1, this.pushes);
+    public static State walk(State parent, Coordinate nextPlayer, char move) {
+        return new State(nextPlayer,
+                parent.boxes,
+                parent,
+                move,
+                false,
+                parent.depth + 1,
+                parent.pushes,
+                parent.heuristic,
+                parent.insertionId,
+                parent.hash);
     }
 
-    public State spawnPushState(Coordinate newPlayerCoordinate, Coordinate[] newBoxCoordinates, char move) {
-        return new State(newPlayerCoordinate, newBoxCoordinates, true, this, true, move, this.depth + 1, this.pushes + 1);
+    public static State push(State parent,
+                              Coordinate nextPlayer,
+                              Coordinate[] updatedBoxes,
+                              char move,
+                              int heuristic) {
+        Coordinate[] ordered = copyAndSort(updatedBoxes);
+        long insertion = INSERTION_SEQUENCE.getAndIncrement();
+        long hash = computeHash(nextPlayer, ordered);
+        return new State(nextPlayer,
+                ordered,
+                parent,
+                move,
+                true,
+                parent.depth + 1,
+                parent.pushes + 1,
+                heuristic,
+                insertion,
+                hash);
     }
 
-    public String reconstructMoves() {
-        StringBuilder sb = new StringBuilder();
-        State cur = this;
-        while (cur != null) {
-            if (cur.lastMove != '\0') {
-                sb.append(cur.lastMove);
-            }
-            cur = cur.parent;
+    private static Coordinate[] copyAndSort(Coordinate[] boxes) {
+        Coordinate[] copy = new Coordinate[boxes.length];
+        for (int i = 0; i < boxes.length; i++) {
+            Coordinate c = boxes[i];
+            copy[i] = new Coordinate(c.x, c.y);
         }
-        return sb.reverse().toString();
+        Arrays.sort(copy);
+        return copy;
     }
-    public boolean isGoal(Coordinate[] goals){
-        for (Coordinate box : boxCoordinates){
-            boolean onGoal = false;
-            for (Coordinate goal : goals){
-                if (box.x == goal.x && box.y == goal.y){
-                    onGoal = true;
-                    break;
-                }
-            }
 
-            if (!onGoal){
-                return false;
-            }
+    private static long computeHash(Coordinate player, Coordinate[] boxes) {
+        long hash = 1469598103934665603L;
+        hash = (hash ^ player.x) * 1099511628211L;
+        hash = (hash ^ player.y) * 1099511628211L;
+        for (Coordinate box : boxes) {
+            hash = (hash ^ box.x) * 1099511628211L;
+            hash = (hash ^ box.y) * 1099511628211L;
         }
-
-        return true;
+        return hash;
     }
 
-    public void setCachedHeuristic(int h) {
-        this.cachedHeuristic = h;
+    public Coordinate getPlayer() {
+        return player;
     }
 
-    public int getCachedHeuristic() {
-        return (cachedHeuristic != Integer.MIN_VALUE) ? cachedHeuristic : Integer.MAX_VALUE;
+    public Coordinate[] getBoxes() {
+        return boxes;
+    }
+
+    public State getParent() {
+        return parent;
+    }
+
+    public char getLastMove() {
+        return lastMove;
+    }
+
+    public boolean wasPush() {
+        return lastMovePush;
     }
 
     public int getDepth() {
@@ -108,16 +129,52 @@ public class State {
         return pushes;
     }
 
-    public State getParent() {
-        return parent;
+    public int getHeuristic() {
+        return heuristic;
     }
 
-    public long getStateId() {
-        return stateId;
+    public int getFCost() {
+        return fCost;
+    }
+
+    public long getInsertionId() {
+        return insertionId;
+    }
+
+    public long getHash() {
+        return hash;
+    }
+
+    public boolean isGoal(Coordinate[] goals) {
+        for (Coordinate box : boxes) {
+            boolean onGoal = false;
+            for (Coordinate goal : goals) {
+                if (box.x == goal.x && box.y == goal.y) {
+                    onGoal = true;
+                    break;
+                }
+            }
+            if (!onGoal) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public String reconstructPlan() {
+        StringBuilder builder = new StringBuilder();
+        State cursor = this;
+        while (cursor != null) {
+            if (cursor.lastMove != '\0') {
+                builder.append(cursor.lastMove);
+            }
+            cursor = cursor.parent;
+        }
+        return builder.reverse().toString();
     }
 
     public boolean hasBoxAt(int x, int y) {
-        for (Coordinate c : boxCoordinates) {
+        for (Coordinate c : boxes) {
             if (c.x == x && c.y == y) {
                 return true;
             }
@@ -126,55 +183,22 @@ public class State {
     }
 
     @Override
-    public boolean equals(Object o){
-        if (this == o){
+    public boolean equals(Object other) {
+        if (this == other) {
             return true;
         }
-        
-        if (!(o instanceof  State)){
+        if (!(other instanceof State)) {
             return false;
         }
-
-        State other = (State) o;
-        
-        if (this.playerCoordinate.x != other.playerCoordinate.x ||
-            this.playerCoordinate.y != other.playerCoordinate.y){
+        State that = (State) other;
+        if (player.x != that.player.x || player.y != that.player.y) {
             return false;
         }
-
-        if (this.boxCoordinates.length != other.boxCoordinates.length){
-            return false;
-        }
-
-        for (int i = 0; i < boxCoordinates.length; i++){
-            Coordinate a = this.boxCoordinates[i];
-            Coordinate b = other.boxCoordinates[i];
-
-            if (a.x != b.x || a.y != b.y){
-                return false;
-            }
-        }
-
-        return true;
+        return Arrays.equals(boxes, that.boxes);
     }
 
     @Override
-    public int hashCode(){
-        if (cachedHash != 0){
-            return cachedHash;
-        }
-
-        int h = 17;
-        h = h * 31 + playerCoordinate.x;
-        h = h * 31 + playerCoordinate.y;
-
-        for (Coordinate c : boxCoordinates){
-            h = h * 31 + c.x;
-            h = h * 31 + c.y;
-        }
-
-        cachedHash = (h == 0) ? 1 : h;
-        return cachedHash;
+    public int hashCode() {
+        return (int) (hash ^ (hash >>> 32));
     }
-
 }
