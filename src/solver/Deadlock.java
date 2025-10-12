@@ -84,15 +84,6 @@ public class Deadlock {
     }
 
     private boolean isWallLineDeadlock(Coordinate box) {
-        boolean verticalWall = isBlocking(box.x, box.y - 1) && isBlocking(box.x, box.y + 1);
-        if (verticalWall && !goalInRow(box.y)) {
-            return true;
-        }
-
-        boolean horizontalWall = isBlocking(box.x - 1, box.y) && isBlocking(box.x + 1, box.y);
-        if (horizontalWall && !goalInColumn(box.x)) {
-            return true;
-        }
 
         return false;
     }
@@ -143,4 +134,6 @@ public class Deadlock {
         // Ensure there is at least one non-goal box in the block (our current box qualifies)
         return boxes > 0;
     }
+
+
 }
