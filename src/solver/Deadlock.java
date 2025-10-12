@@ -1,30 +1,29 @@
 package solver;
 
 public class Deadlock {
-    private final State state;
     private final char[][] mapData;
-    private final Coordinate[] goalCoordinates;
-
     private final boolean[][] isGoal;
     private final boolean[] goalRow;
     private final boolean[] goalCol;
+    private final int rows;
+    private final int cols;
 
-    public Deadlock(State state, char[][] mapData, Coordinate[] goalCoordinates){
-        this.state = state;
+    public Deadlock(char[][] mapData, Coordinate[] goalCoordinates) {
         this.mapData = mapData;
-        this.goalCoordinates = goalCoordinates;
 
-        assert this.goalCoordinates != null : "Goal coordinates must be supplied to deadlock detection";
+        this.rows = mapData.length;
+        this.cols = this.rows == 0 ? 0 : mapData[0].length;
 
-        int rows = mapData.length;
-        int cols = mapData[0].length;
+        this.isGoal = new boolean[this.rows][this.cols];
+        this.goalRow = new boolean[this.rows];
+        this.goalCol = new boolean[this.cols];
 
-        isGoal = new boolean[rows][cols];
-        goalRow = new boolean[rows];
-        goalCol = new boolean[cols];
+        if (goalCoordinates == null) {
+            throw new IllegalArgumentException("Goal coordinates must be supplied to deadlock detection");
+        }
 
         for (Coordinate g : goalCoordinates) {
-            if (g.y >= 0 && g.y < rows && g.x >= 0 && g.x < cols) {
+            if (g.y >= 0 && g.y < this.rows && g.x >= 0 && g.x < this.cols) {
                 isGoal[g.y][g.x] = true;
                 goalRow[g.y] = true;
                 goalCol[g.x] = true;
@@ -32,21 +31,21 @@ public class Deadlock {
         }
     }
 
-    public boolean isDeadlock(){
-        for (Coordinate box: state.boxCoordinates){
-            if (isBoxInGoal(box)){
+    public boolean isDeadlock(State state) {
+        for (Coordinate box : state.boxCoordinates) {
+            if (isBoxInGoal(box)) {
                 continue;
             }
 
-            if (isCornerDeadlock(box)){
+            if (isCornerDeadlock(state, box)) {
                 return true;
             }
 
-            if (isTwoByTwoDeadlock(box)){
+            if (isTwoByTwoDeadlock(state, box)) {
                 return true;
             }
 
-            if (isWallLineDeadlock(box)){
+            if (isWallLineDeadlock(state, box)) {
                 return true;
             }
         }
@@ -54,41 +53,41 @@ public class Deadlock {
         return false;
     }
 
-    private boolean isBoxInGoal(Coordinate box){
-        if (box.y < 0 || box.y >= isGoal.length) {
+    private boolean isBoxInGoal(Coordinate box) {
+        if (box.y < 0 || box.y >= rows) {
             return false;
         }
-        if (box.x < 0 || box.x >= isGoal[0].length){
+        if (box.x < 0 || box.x >= cols) {
             return false;
-        } 
+        }
         return isGoal[box.y][box.x];
     }
 
-    private boolean isCornerDeadlock(Coordinate box){
-        boolean up = actsAsRigidObstacle(box.x, box.y - 1, 0, -1);
-        boolean down = actsAsRigidObstacle(box.x, box.y + 1, 0, 1);
-        boolean left = actsAsRigidObstacle(box.x - 1, box.y, -1, 0);
-        boolean right = actsAsRigidObstacle(box.x + 1, box.y, 1, 0);
+    private boolean isCornerDeadlock(State state, Coordinate box) {
+        boolean up = actsAsRigidObstacle(state, box.x, box.y - 1, 0, -1);
+        boolean down = actsAsRigidObstacle(state, box.x, box.y + 1, 0, 1);
+        boolean left = actsAsRigidObstacle(state, box.x - 1, box.y, -1, 0);
+        boolean right = actsAsRigidObstacle(state, box.x + 1, box.y, 1, 0);
 
         return (up && left) || (up && right) || (down && left) || (down && right);
     }
 
-    private boolean isTwoByTwoDeadlock(Coordinate box) {
-        int[][] offsets = {{0,0},{-1,0},{0,-1},{-1,-1}};
+    private boolean isTwoByTwoDeadlock(State state, Coordinate box) {
+        int[][] offsets = {{0, 0}, {-1, 0}, {0, -1}, {-1, -1}};
         for (int[] offset : offsets) {
-            if (isSolidSquare(box.x + offset[0], box.y + offset[1])) {
+            if (isSolidSquare(state, box.x + offset[0], box.y + offset[1])) {
                 return true;
             }
         }
         return false;
     }
 
-    private boolean isWallLineDeadlock(Coordinate box) {
-        return isClosedCorridor(box, true) || isClosedCorridor(box, false);
+    private boolean isWallLineDeadlock(State state, Coordinate box) {
+        return isClosedCorridor(state, box, true) || isClosedCorridor(state, box, false);
     }
 
     private boolean goalInRow(int row) {
-        if (row < 0 || row >= goalRow.length){
+        if (row < 0 || row >= rows) {
             return false;
         }
 
@@ -96,15 +95,15 @@ public class Deadlock {
     }
 
     private boolean goalInColumn(int col) {
-        if (col < 0 || col >= goalCol.length){
+        if (col < 0 || col >= cols) {
             return false;
         }
 
         return goalCol[col];
     }
 
-    private boolean isBlocking(int x, int y) {
-        if (y < 0 || y >= mapData.length || x < 0 || x >= mapData[0].length) {
+    private boolean isBlocking(State state, int x, int y) {
+        if (y < 0 || y >= rows || x < 0 || x >= cols) {
             return true;
         }
         if (mapData[y][x] == Constants.WALL) {
@@ -116,7 +115,7 @@ public class Deadlock {
         return false;
     }
 
-    private boolean actsAsRigidObstacle(int x, int y, int towardX, int towardY) {
+    private boolean actsAsRigidObstacle(State state, int x, int y, int towardX, int towardY) {
         if (isWallOrBoundary(x, y)) {
             return true;
         }
@@ -132,16 +131,16 @@ public class Deadlock {
         return isWallOrBoundary(x - 1, y) && isWallOrBoundary(x + 1, y);
     }
 
-    private boolean isSolidSquare(int startX, int startY) {
+    private boolean isSolidSquare(State state, int startX, int startY) {
         int boxes = 0;
         for (int dy = 0; dy < 2; dy++) {
             for (int dx = 0; dx < 2; dx++) {
                 int x = startX + dx;
                 int y = startY + dy;
-                if (!isBlocking(x, y)) {
+                if (!isBlocking(state, x, y)) {
                     return false;
                 }
-                if (state.hasBoxAt(x, y) && !isGoal[y][x]) {
+                if (y >= 0 && y < rows && x >= 0 && x < cols && state.hasBoxAt(x, y) && !isGoal[y][x]) {
                     boxes++;
                 }
             }
@@ -151,13 +150,13 @@ public class Deadlock {
     }
 
     private boolean isWallOrBoundary(int x, int y) {
-        if (y < 0 || y >= mapData.length || x < 0 || x >= mapData[0].length) {
+        if (y < 0 || y >= rows || x < 0 || x >= cols) {
             return true;
         }
         return mapData[y][x] == Constants.WALL;
     }
 
-    private boolean isClosedCorridor(Coordinate box, boolean horizontal) {
+    private boolean isClosedCorridor(State state, Coordinate box, boolean horizontal) {
         int side1x;
         int side1y;
         int side2x;
@@ -179,11 +178,11 @@ public class Deadlock {
             return false;
         }
 
-        LineCheck negative = walkCorridor(box.x, box.y,
+        LineCheck negative = walkCorridor(state, box.x, box.y,
                 horizontal ? -1 : 0,
                 horizontal ? 0 : -1,
                 side1x, side1y, side2x, side2y);
-        LineCheck positive = walkCorridor(box.x, box.y,
+        LineCheck positive = walkCorridor(state, box.x, box.y,
                 horizontal ? 1 : 0,
                 horizontal ? 0 : 1,
                 side1x, side1y, side2x, side2y);
@@ -203,12 +202,12 @@ public class Deadlock {
         return !goalInColumn(box.x);
     }
 
-    private LineCheck walkCorridor(int startX, int startY, int stepX, int stepY, int side1x, int side1y, int side2x, int side2y) {
+    private LineCheck walkCorridor(State state, int startX, int startY, int stepX, int stepY, int side1x, int side1y, int side2x, int side2y) {
         int cx = startX + stepX;
         int cy = startY + stepY;
 
         while (true) {
-            if (cx < 0 || cy < 0 || cy >= mapData.length || cx >= mapData[0].length) {
+            if (cx < 0 || cy < 0 || cy >= rows || cx >= cols) {
                 return new LineCheck(true, false);
             }
 

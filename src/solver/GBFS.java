@@ -18,6 +18,7 @@ public class GBFS {
 
     private final char[][] mapData;
     private final Coordinate[] goalCoordinates;
+    private final Deadlock deadlockDetector;
     private final SearchStats stats = new SearchStats();
     private final Comparator<State> stateComparator = (a, b) -> {
         int cmp = Integer.compare(a.getCachedHeuristic(), b.getCachedHeuristic());
@@ -46,6 +47,7 @@ public class GBFS {
     public GBFS(char[][] mapData, Coordinate[] goalCoordinates){
         this.mapData = mapData;
         this.goalCoordinates = goalCoordinates;
+        this.deadlockDetector = new Deadlock(mapData, goalCoordinates);
     }
 
     public String search(State initial){
@@ -226,8 +228,7 @@ public class GBFS {
                     continue;
                 }
 
-                Deadlock deadlock = new Deadlock(pushState, mapData, goalCoordinates);
-                if (deadlock.isDeadlock()) {
+                if (deadlockDetector.isDeadlock(pushState)) {
                     stats.recordDeadlockPruned();
                     continue;
                 }

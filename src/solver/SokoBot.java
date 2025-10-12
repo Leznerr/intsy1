@@ -20,7 +20,6 @@ public class SokoBot {
 
     extractMap(mapData, itemsData, height, width);
 
-    // coconvert array list to arr
     Coordinate[] boxCoordinates = boxList.toArray(new Coordinate[0]);
     Coordinate[] goalCoordinates = goalList.toArray(new Coordinate[0]);
 
@@ -34,25 +33,39 @@ public class SokoBot {
     return plan;
   }
 
-  private void extractMap(char[][] mapData, char[][] itemsData, int height, int width){
-    for (int y = 0; y < height; y++){
-      for (int x = 0; x < width; x++){
-        char mapDataContent = mapData[y][x];
-        char itemsDataContent = itemsData[y][x];
-
-        if (mapDataContent == Constants.PLAYER || itemsDataContent == Constants.PLAYER) {
-          player = new Coordinate(x, y);
+  private void extractMap(char[][] mapData, char[][] itemsData, int height, int width) {
+    for (int y = 0; y < height; y++) {
+      for (int x = 0; x < width; x++) {
+        char cell = itemsData[y][x];
+        switch (cell) {
+          case Constants.PLAYER:
+          case Constants.PLAYER_ON_GOAL:
+            player = new Coordinate(x, y);
+            break;
+          case Constants.BOX:
+          case Constants.BOX_ON_GOAL:
+            boxList.add(new Coordinate(x, y));
+            break;
+          default:
+            break;
         }
 
-        if (mapDataContent == Constants.BOX || itemsDataContent == Constants.BOX) {
-          boxList.add(new Coordinate(x, y));
-        }
-
-        if (mapDataContent == Constants.GOAL || itemsDataContent == Constants.GOAL) {
+        if (mapData[y][x] == Constants.GOAL || cell == Constants.BOX_ON_GOAL || cell == Constants.PLAYER_ON_GOAL) {
           goalList.add(new Coordinate(x, y));
         }
       }
     }
+
+    if (player == null) {
+      throw new IllegalStateException("Map does not contain a player start position");
+    }
+  }
+
+  /**
+   * Returns an immutable snapshot of metrics gathered during the latest search invocation.
+   */
+  public SearchStats getLastStats() {
+    return lastStats;
   }
 
   /**
