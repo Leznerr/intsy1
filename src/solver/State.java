@@ -1,10 +1,12 @@
 package solver;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicLong;
 
 public final class State {
     private static final AtomicLong INSERTION_SEQUENCE = new AtomicLong(1L);
+    private static final int HEURISTIC_WEIGHT = 1000;
 
     private final Coordinate player;
     private final Coordinate[] boxes;
@@ -17,6 +19,8 @@ public final class State {
     private final int fCost;
     private final long insertionId;
     private final long hash;
+    private final char[] prePushWalk;
+    private final int movedBoxIndex;
 
     private State(Coordinate player,
                   Coordinate[] boxes,
@@ -27,7 +31,9 @@ public final class State {
                   int pushes,
                   int heuristic,
                   long insertionId,
-                  long hash) {
+                  long hash,
+                  char[] prePushWalk,
+                  int movedBoxIndex) {
         this.player = player;
         this.boxes = boxes;
         this.parent = parent;
@@ -36,15 +42,23 @@ public final class State {
         this.depth = depth;
         this.pushes = pushes;
         this.heuristic = heuristic;
-        this.fCost = heuristic == Integer.MAX_VALUE ? Integer.MAX_VALUE : pushes + heuristic;
+        if (heuristic == Integer.MAX_VALUE) {
+            this.fCost = Integer.MAX_VALUE;
+        } else {
+            long weighted = (long) heuristic * HEURISTIC_WEIGHT;
+            long total = pushes + weighted;
+            this.fCost = total >= Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) total;
+        }
         this.insertionId = insertionId;
         this.hash = hash;
+        this.prePushWalk = prePushWalk == null ? new char[0] : prePushWalk.clone();
+        this.movedBoxIndex = movedBoxIndex;
     }
 
     public static State initial(Coordinate player, Coordinate[] boxes, int heuristic) {
         Coordinate[] orderedBoxes = copyAndSort(boxes);
         long hash = computeHash(player, orderedBoxes);
-        return new State(player, orderedBoxes, null, '\0', false, 0, 0, heuristic, 0L, hash);
+        return new State(player, orderedBoxes, null, '\0', false, 0, 0, heuristic, 0L, hash, new char[0], -1);
     }
 
     public static State walk(State parent, Coordinate nextPlayer, char move) {
@@ -57,27 +71,64 @@ public final class State {
                 parent.pushes,
                 parent.heuristic,
                 parent.insertionId,
-                parent.hash);
+                parent.hash,
+                new char[0],
+                -1);
     }
 
     public static State push(State parent,
                               Coordinate nextPlayer,
                               Coordinate[] updatedBoxes,
                               char move,
-                              int heuristic) {
+                              int heuristic,
+                              char[] prePushWalk) {
         Coordinate[] ordered = copyAndSort(updatedBoxes);
         long insertion = INSERTION_SEQUENCE.getAndIncrement();
         long hash = computeHash(nextPlayer, ordered);
+        Coordinate newLocation = findMovedCoordinate(parent.getBoxes(), ordered);
+        int movedIndex = findIndex(ordered, newLocation);
+        int additionalDepth = prePushWalk == null ? 0 : prePushWalk.length;
         return new State(nextPlayer,
                 ordered,
                 parent,
                 move,
                 true,
-                parent.depth + 1,
+                parent.depth + additionalDepth + 1,
                 parent.pushes + 1,
                 heuristic,
                 insertion,
-                hash);
+                hash,
+                prePushWalk,
+                movedIndex);
+    }
+
+    private static int findIndex(Coordinate[] boxes, Coordinate target) {
+        for (int i = 0; i < boxes.length; i++) {
+            Coordinate box = boxes[i];
+            if (box.x == target.x && box.y == target.y) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static Coordinate findMovedCoordinate(Coordinate[] previous, Coordinate[] current) {
+        for (Coordinate candidate : current) {
+            boolean exists = false;
+            for (Coordinate prior : previous) {
+                if (candidate.x == prior.x && candidate.y == prior.y) {
+                    exists = true;
+                    break;
+                }
+            }
+            if (!exists) {
+                return candidate;
+            }
+        }
+        if (current.length > 0) {
+            return current[0];
+        }
+        throw new IllegalStateException("Unable to determine moved box location");
     }
 
     private static Coordinate[] copyAndSort(Coordinate[] boxes) {
@@ -162,15 +213,36 @@ public final class State {
     }
 
     public String reconstructPlan() {
-        StringBuilder builder = new StringBuilder();
+        if (depth == 0) {
+            return "";
+        }
+        char[] sequence = new char[depth];
+        int index = 0;
+        ArrayList<State> chain = new ArrayList<>();
         State cursor = this;
         while (cursor != null) {
-            if (cursor.lastMove != '\0') {
-                builder.append(cursor.lastMove);
-            }
+            chain.add(cursor);
             cursor = cursor.parent;
         }
-        return builder.reverse().toString();
+        for (int i = chain.size() - 1; i >= 0; i--) {
+            State node = chain.get(i);
+            if (!node.lastMovePush) {
+                continue;
+            }
+            for (char move : node.prePushWalk) {
+                if (index < sequence.length) {
+                    sequence[index++] = move;
+                }
+            }
+            if (index < sequence.length) {
+                sequence[index++] = node.lastMove;
+            }
+        }
+        return new String(sequence, 0, index);
+    }
+
+    public int getMovedBoxIndex() {
+        return movedBoxIndex;
     }
 
     public boolean hasBoxAt(int x, int y) {
