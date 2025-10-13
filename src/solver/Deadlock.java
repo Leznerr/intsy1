@@ -14,7 +14,6 @@ public final class Deadlock {
     private long wallLineDeadlocks;
     private final int[] queueX;
     private final int[] queueY;
-    private final RegionSummary regionSummary = new RegionSummary();
 
     public Deadlock(char[][] mapData, Coordinate[] goalCoordinates) {
         this.mapData = mapData;
@@ -243,68 +242,10 @@ public final class Deadlock {
     }
 
     public boolean regionHasGoalForMove(Coordinate[] boxes, int movedIdx, int destX, int destY) {
-        if (!analyzeBoxAwareRegion(boxes, movedIdx, destX, destY, regionSummary)) {
+        if (!inBounds(destX, destY)) {
             return false;
         }
-        if (regionSummary.goals == 0) {
-            return false;
-        }
-        return regionSummary.boxes <= regionSummary.goals;
-    }
-
-    public boolean isWallLineFreeze(int x, int y, Coordinate[] boxes) {
-        if (!inBounds(x, y)) {
-            return false;
-        }
-        if (isGoal(x, y)) {
-            return false;
-        }
-        int targetIdx = -1;
-        for (int i = 0; i < boxes.length; i++) {
-            Coordinate candidate = boxes[i];
-            if (candidate != null && candidate.x == x && candidate.y == y) {
-                targetIdx = i;
-                break;
-            }
-        }
-        if (targetIdx == -1) {
-            return false;
-        }
-        if (!analyzeBoxAwareRegion(boxes, targetIdx, x, y, regionSummary)) {
-            return false;
-        }
-        if (regionSummary.goals > 0) {
-            return false;
-        }
-        if (isWallOrOutOfBounds(x - 1, y)
-                && isLineFrozenAlongRegion(x, y, regionSummary, 0, 1, 1, 0)) {
-            return true;
-        }
-        if (isWallOrOutOfBounds(x + 1, y)
-                && isLineFrozenAlongRegion(x, y, regionSummary, 0, 1, -1, 0)) {
-            return true;
-        }
-        if (isWallOrOutOfBounds(x, y - 1)
-                && isLineFrozenAlongRegion(x, y, regionSummary, 1, 0, 0, 1)) {
-            return true;
-        }
-        if (isWallOrOutOfBounds(x, y + 1)
-                && isLineFrozenAlongRegion(x, y, regionSummary, 1, 0, 0, -1)) {
-            return true;
-        }
-        return false;
-    }
-
-    private boolean analyzeBoxAwareRegion(Coordinate[] boxes,
-                                          int movedIdx,
-                                          int startX,
-                                          int startY,
-                                          RegionSummary summary) {
-        summary.reset();
-        if (!inBounds(startX, startY)) {
-            return false;
-        }
-        if (mapData[startY][startX] == Constants.WALL) {
+        if (mapData[destY][destX] == Constants.WALL) {
             return false;
         }
 
@@ -320,25 +261,79 @@ public final class Deadlock {
         }
 
         advanceRegionToken();
-        int token = regionToken;
-        summary.token = token;
+        int ignoringToken = regionToken;
+        int head = 0;
+        int tail = 0;
+        regionStamp[destY][destX] = ignoringToken;
+        queueX[tail] = destX;
+        queueY[tail] = destY;
+        tail++;
+        int goalsInRegion = 0;
+        while (head < tail) {
+            int cx = queueX[head];
+            int cy = queueY[head];
+            head++;
+            if (goal[cy][cx]) {
+                goalsInRegion++;
+            }
+            for (int dir = 0; dir < Constants.DIRECTION_X.length; dir++) {
+                int nx = cx + Constants.DIRECTION_X[dir];
+                int ny = cy + Constants.DIRECTION_Y[dir];
+                if (!inBounds(nx, ny)) {
+                    continue;
+                }
+                if (regionStamp[ny][nx] == ignoringToken) {
+                    continue;
+                }
+                if (mapData[ny][nx] == Constants.WALL) {
+                    continue;
+                }
+                if (boxStamp[ny][nx] == boxStampToken) {
+                    continue;
+                }
+                regionStamp[ny][nx] = ignoringToken;
+                queueX[tail] = nx;
+                queueY[tail] = ny;
+                tail++;
+            }
+        }
+        if (goalsInRegion == 0) {
+            return fallbackRegionHasGoal(destX, destY);
+        }
 
+        int boxesInRegion = 1;
+        for (int i = 0; i < boxes.length; i++) {
+            if (i == movedIdx) {
+                continue;
+            }
+            Coordinate box = boxes[i];
+            if (box != null && inBounds(box.x, box.y)
+                    && regionStamp[box.y][box.x] == ignoringToken) {
+                boxesInRegion++;
+            }
+        }
+        if (boxesInRegion <= goalsInRegion) {
+            return true;
+        }
+        return fallbackRegionHasGoal(destX, destY);
+    }
+
+    private boolean fallbackRegionHasGoal(int startX, int startY) {
+        advanceRegionToken();
+        int token = regionToken;
         int head = 0;
         int tail = 0;
         regionStamp[startY][startX] = token;
         queueX[tail] = startX;
         queueY[tail] = startY;
         tail++;
-
-        summary.boxes = 1;
-        if (goal[startY][startX]) {
-            summary.goals = 1;
-        }
-
         while (head < tail) {
             int cx = queueX[head];
             int cy = queueY[head];
             head++;
+            if (goal[cy][cx]) {
+                return true;
+            }
             for (int dir = 0; dir < Constants.DIRECTION_X.length; dir++) {
                 int nx = cx + Constants.DIRECTION_X[dir];
                 int ny = cy + Constants.DIRECTION_Y[dir];
@@ -351,83 +346,11 @@ public final class Deadlock {
                 if (mapData[ny][nx] == Constants.WALL) {
                     continue;
                 }
-                if (boxStamp[ny][nx] == boxStampToken) {
-                    regionStamp[ny][nx] = token;
-                    summary.boxes++;
-                    if (goal[ny][nx]) {
-                        summary.goals++;
-                    }
-                    continue;
-                }
                 regionStamp[ny][nx] = token;
                 queueX[tail] = nx;
                 queueY[tail] = ny;
                 tail++;
-                if (goal[ny][nx]) {
-                    summary.goals++;
-                }
             }
-        }
-        return true;
-    }
-
-    private boolean isLineFrozenAlongRegion(int x,
-                                            int y,
-                                            RegionSummary summary,
-                                            int axisStepX,
-                                            int axisStepY,
-                                            int oppositeDx,
-                                            int oppositeDy) {
-        if (!isCellOppositeBlocked(x, y, oppositeDx, oppositeDy)) {
-            return false;
-        }
-        if (!isDirectionOppositeBlocked(x, y, axisStepX, axisStepY, oppositeDx, oppositeDy, summary.token)) {
-            return false;
-        }
-        if (!isDirectionOppositeBlocked(x, y, -axisStepX, -axisStepY, oppositeDx, oppositeDy, summary.token)) {
-            return false;
-        }
-        return true;
-    }
-
-    private boolean isDirectionOppositeBlocked(int originX,
-                                               int originY,
-                                               int stepX,
-                                               int stepY,
-                                               int oppositeDx,
-                                               int oppositeDy,
-                                               int token) {
-        if (stepX == 0 && stepY == 0) {
-            return true;
-        }
-        int cx = originX + stepX;
-        int cy = originY + stepY;
-        while (true) {
-            if (!inBounds(cx, cy)) {
-                return true;
-            }
-            if (regionStamp[cy][cx] != token) {
-                return true;
-            }
-            if (!isCellOppositeBlocked(cx, cy, oppositeDx, oppositeDy)) {
-                return false;
-            }
-            cx += stepX;
-            cy += stepY;
-        }
-    }
-
-    private boolean isCellOppositeBlocked(int cellX, int cellY, int offsetX, int offsetY) {
-        int targetX = cellX + offsetX;
-        int targetY = cellY + offsetY;
-        if (!inBounds(targetX, targetY)) {
-            return true;
-        }
-        if (mapData[targetY][targetX] == Constants.WALL) {
-            return true;
-        }
-        if (hasBox(targetX, targetY) && !isGoal(targetX, targetY)) {
-            return true;
         }
         return false;
     }
@@ -522,17 +445,5 @@ public final class Deadlock {
 
     private boolean inBounds(int x, int y) {
         return y >= 0 && y < rows && x >= 0 && x < cols;
-    }
-
-    private static final class RegionSummary {
-        int goals;
-        int boxes;
-        int token;
-
-        void reset() {
-            goals = 0;
-            boxes = 0;
-            token = 0;
-        }
     }
 }
