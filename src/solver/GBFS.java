@@ -28,6 +28,8 @@ public final class GBFS {
     private final HashSet<Long> localSignatureBuffer = new HashSet<>();
     private State bestFrontierCandidate;
     private State deepestFrontierCandidate;
+    private long regionPrunedCount;
+    private static final char[] EMPTY_PATH = new char[0];
 
     private final Comparator<State> stateComparator = (a, b) -> {
         int cmp = Integer.compare(a.getFCost(), b.getFCost());

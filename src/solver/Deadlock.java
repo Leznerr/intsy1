@@ -93,6 +93,9 @@ public final class Deadlock {
             if (!regionHasGoalIgnoringBoxes(box.x, box.y)) {
                 return true;
             }
+            if (!regionHasGoalIgnoringBoxes(box.x, box.y)) {
+                return true;
+            }
             if (isCorridorTrap(box)) {
                 return true;
             }
