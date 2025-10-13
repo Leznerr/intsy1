@@ -14,11 +14,6 @@ public final class SearchStats {
     private boolean timeLimitHit;
     private int bestPlanLength;
     private int bestPlanPushes;
-    private long regionPruned;
-    private long cornerDeadlockCount;
-    private long twoByTwoDeadlockCount;
-    private long wallLineDeadlockCount;
-    private long firstGoalNanos;
 
     SearchStats() {
         reset(0L);
@@ -38,11 +33,6 @@ public final class SearchStats {
         this.timeLimitHit = other.timeLimitHit;
         this.bestPlanLength = other.bestPlanLength;
         this.bestPlanPushes = other.bestPlanPushes;
-        this.regionPruned = other.regionPruned;
-        this.cornerDeadlockCount = other.cornerDeadlockCount;
-        this.twoByTwoDeadlockCount = other.twoByTwoDeadlockCount;
-        this.wallLineDeadlockCount = other.wallLineDeadlockCount;
-        this.firstGoalNanos = other.firstGoalNanos;
     }
 
     static SearchStats empty() {
@@ -67,11 +57,6 @@ public final class SearchStats {
         this.timeLimitHit = false;
         this.bestPlanLength = -1;
         this.bestPlanPushes = -1;
-        this.regionPruned = 0L;
-        this.cornerDeadlockCount = 0L;
-        this.twoByTwoDeadlockCount = 0L;
-        this.wallLineDeadlockCount = 0L;
-        this.firstGoalNanos = -1L;
     }
 
     void markStart(long now) {
@@ -84,9 +69,6 @@ public final class SearchStats {
         if (planLength >= 0) {
             this.bestPlanLength = planLength;
             this.bestPlanPushes = planPushes;
-            if (this.firstGoalNanos == -1L && this.startTimeNanos != 0L) {
-                this.firstGoalNanos = now - this.startTimeNanos;
-            }
         }
         this.closedStates = closedSize;
     }
@@ -122,31 +104,6 @@ public final class SearchStats {
                 this.openPeak = openSize;
             }
         }
-    }
-
-    void recordRegionPruned() {
-        if (Constants.DEBUG_METRICS) {
-            this.regionPruned++;
-        }
-    }
-
-    void recordFirstGoal(long now) {
-        if (this.firstGoalNanos != -1L) {
-            return;
-        }
-        if (this.startTimeNanos == 0L) {
-            return;
-        }
-        this.firstGoalNanos = now - this.startTimeNanos;
-    }
-
-    void captureDeadlockCounts(long corner, long twoByTwo, long wallLine) {
-        if (!Constants.DEBUG_METRICS) {
-            return;
-        }
-        this.cornerDeadlockCount = corner;
-        this.twoByTwoDeadlockCount = twoByTwo;
-        this.wallLineDeadlockCount = wallLine;
     }
 
     void updateBestPlanLength(int planLength, int pushes) {
@@ -219,28 +176,5 @@ public final class SearchStats {
 
     public double getTimeLimitSeconds() {
         return timeLimitNanos / 1_000_000_000.0;
-    }
-
-    public long getRegionPruned() {
-        return regionPruned;
-    }
-
-    public long getCornerDeadlockCount() {
-        return cornerDeadlockCount;
-    }
-
-    public long getTwoByTwoDeadlockCount() {
-        return twoByTwoDeadlockCount;
-    }
-
-    public long getWallLineDeadlockCount() {
-        return wallLineDeadlockCount;
-    }
-
-    public long getFirstGoalMillis() {
-        if (firstGoalNanos < 0L) {
-            return -1L;
-        }
-        return firstGoalNanos / 1_000_000L;
     }
 }

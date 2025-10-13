@@ -1,5 +1,8 @@
 package solver;
 
+import java.util.ArrayDeque;
+import java.util.Queue;
+
 public final class Deadlock {
     private final char[][] mapData;
     private final boolean[][] goal;
@@ -9,11 +12,6 @@ public final class Deadlock {
     private int boxStampToken = 1;
     private final int[][] regionStamp;
     private int regionToken = 1;
-    private long cornerDeadlocks;
-    private long twoByTwoDeadlocks;
-    private long wallLineDeadlocks;
-    private final int[] queueX;
-    private final int[] queueY;
 
     public Deadlock(char[][] mapData, Coordinate[] goalCoordinates) {
         this.mapData = mapData;
@@ -27,70 +25,18 @@ public final class Deadlock {
         }
         this.boxStamp = new int[rows][cols];
         this.regionStamp = new int[rows][cols];
-        int capacity = Math.max(1, rows * cols);
-        this.queueX = new int[capacity];
-        this.queueY = new int[capacity];
-    }
-
-    public void resetRuleCounters() {
-        cornerDeadlocks = 0L;
-        twoByTwoDeadlocks = 0L;
-        wallLineDeadlocks = 0L;
-    }
-
-    public long getCornerDeadlocks() {
-        return cornerDeadlocks;
-    }
-
-    public long getTwoByTwoDeadlocks() {
-        return twoByTwoDeadlocks;
-    }
-
-    public long getWallLineDeadlocks() {
-        return wallLineDeadlocks;
     }
 
     public boolean isDeadlock(State state) {
-        return detectDeadlock(state, true);
-    }
-
-    public boolean wouldBeDeadlock(State state) {
-        return detectDeadlock(state, false);
-    }
-
-    private boolean detectDeadlock(State state, boolean countRules) {
         markBoxes(state);
-        Coordinate[] boxes = state.getBoxes();
-        for (int idx = 0; idx < boxes.length; idx++) {
-            Coordinate box = boxes[idx];
+        for (Coordinate box : state.getBoxes()) {
             if (isGoal(box.x, box.y)) {
                 continue;
             }
             if (isCorner(box.x, box.y)) {
-                if (countRules) {
-                    cornerDeadlocks++;
-                }
                 return true;
             }
             if (isFrozenSquare(box.x, box.y)) {
-                if (countRules) {
-                    twoByTwoDeadlocks++;
-                }
-                return true;
-            }
-            if (isLineFreeze(box)) {
-                if (countRules) {
-                    wallLineDeadlocks++;
-                }
-                return true;
-            }
-            if (isWallLineTrap(box)) {
-                if (countRules) {
-                    wallLineDeadlocks++;
-                }
-                return true;
-            }
-            if (!regionHasGoalIgnoringBoxes(box.x, box.y)) {
                 return true;
             }
             if (!regionHasGoalIgnoringBoxes(box.x, box.y)) {
@@ -202,45 +148,6 @@ public final class Deadlock {
         return true;
     }
 
-    private boolean isLineFreeze(Coordinate box) {
-        if (isGoal(box.x, box.y)) {
-            return false;
-        }
-        if (hasBox(box.x + 1, box.y) && !isGoal(box.x + 1, box.y)) {
-            boolean wallsAbove = isWallOrOutOfBounds(box.x, box.y - 1)
-                    && isWallOrOutOfBounds(box.x + 1, box.y - 1);
-            boolean wallsBelow = isWallOrOutOfBounds(box.x, box.y + 1)
-                    && isWallOrOutOfBounds(box.x + 1, box.y + 1);
-            if (wallsAbove || wallsBelow) {
-                return true;
-            }
-        }
-        if (hasBox(box.x, box.y + 1) && !isGoal(box.x, box.y + 1)) {
-            boolean wallsLeft = isWallOrOutOfBounds(box.x - 1, box.y)
-                    && isWallOrOutOfBounds(box.x - 1, box.y + 1);
-            boolean wallsRight = isWallOrOutOfBounds(box.x + 1, box.y)
-                    && isWallOrOutOfBounds(box.x + 1, box.y + 1);
-            if (wallsLeft || wallsRight) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private boolean isWallLineTrap(Coordinate box) {
-        if (isGoal(box.x, box.y)) {
-            return false;
-        }
-        boolean adjacentWall = isWallOrOutOfBounds(box.x - 1, box.y)
-                || isWallOrOutOfBounds(box.x + 1, box.y)
-                || isWallOrOutOfBounds(box.x, box.y - 1)
-                || isWallOrOutOfBounds(box.x, box.y + 1);
-        if (!adjacentWall) {
-            return false;
-        }
-        return !regionHasGoalIgnoringBoxes(box.x, box.y);
-    }
-
     public boolean regionHasGoalForMove(Coordinate[] boxes, int movedIdx, int destX, int destY) {
         if (!inBounds(destX, destY)) {
             return false;
@@ -249,30 +156,16 @@ public final class Deadlock {
             return false;
         }
 
-        advanceBoxStamp();
-        for (int i = 0; i < boxes.length; i++) {
-            if (i == movedIdx) {
-                continue;
-            }
-            Coordinate other = boxes[i];
-            if (other != null && inBounds(other.x, other.y)) {
-                boxStamp[other.y][other.x] = boxStampToken;
-            }
-        }
-
         advanceRegionToken();
         int ignoringToken = regionToken;
-        int head = 0;
-        int tail = 0;
+        Queue<int[]> queue = new ArrayDeque<>();
         regionStamp[destY][destX] = ignoringToken;
-        queueX[tail] = destX;
-        queueY[tail] = destY;
-        tail++;
+        queue.add(new int[] {destX, destY});
         int goalsInRegion = 0;
-        while (head < tail) {
-            int cx = queueX[head];
-            int cy = queueY[head];
-            head++;
+        while (!queue.isEmpty()) {
+            int[] cell = queue.remove();
+            int cx = cell[0];
+            int cy = cell[1];
             if (goal[cy][cx]) {
                 goalsInRegion++;
             }
@@ -288,17 +181,12 @@ public final class Deadlock {
                 if (mapData[ny][nx] == Constants.WALL) {
                     continue;
                 }
-                if (boxStamp[ny][nx] == boxStampToken) {
-                    continue;
-                }
                 regionStamp[ny][nx] = ignoringToken;
-                queueX[tail] = nx;
-                queueY[tail] = ny;
-                tail++;
+                queue.add(new int[] {nx, ny});
             }
         }
         if (goalsInRegion == 0) {
-            return fallbackRegionHasGoal(destX, destY);
+            return false;
         }
 
         int boxesInRegion = 1;
@@ -312,61 +200,18 @@ public final class Deadlock {
                 boxesInRegion++;
             }
         }
-        if (boxesInRegion <= goalsInRegion) {
-            return true;
-        }
-        return fallbackRegionHasGoal(destX, destY);
-    }
-
-    private boolean fallbackRegionHasGoal(int startX, int startY) {
-        advanceRegionToken();
-        int token = regionToken;
-        int head = 0;
-        int tail = 0;
-        regionStamp[startY][startX] = token;
-        queueX[tail] = startX;
-        queueY[tail] = startY;
-        tail++;
-        while (head < tail) {
-            int cx = queueX[head];
-            int cy = queueY[head];
-            head++;
-            if (goal[cy][cx]) {
-                return true;
-            }
-            for (int dir = 0; dir < Constants.DIRECTION_X.length; dir++) {
-                int nx = cx + Constants.DIRECTION_X[dir];
-                int ny = cy + Constants.DIRECTION_Y[dir];
-                if (!inBounds(nx, ny)) {
-                    continue;
-                }
-                if (regionStamp[ny][nx] == token) {
-                    continue;
-                }
-                if (mapData[ny][nx] == Constants.WALL) {
-                    continue;
-                }
-                regionStamp[ny][nx] = token;
-                queueX[tail] = nx;
-                queueY[tail] = ny;
-                tail++;
-            }
-        }
-        return false;
+        return boxesInRegion <= goalsInRegion;
     }
 
     private boolean regionHasGoalIgnoringBoxes(int startX, int startY) {
         advanceRegionToken();
-        int head = 0;
-        int tail = 0;
+        Queue<int[]> queue = new ArrayDeque<>();
         regionStamp[startY][startX] = regionToken;
-        queueX[tail] = startX;
-        queueY[tail] = startY;
-        tail++;
-        while (head < tail) {
-            int cx = queueX[head];
-            int cy = queueY[head];
-            head++;
+        queue.add(new int[] {startX, startY});
+        while (!queue.isEmpty()) {
+            int[] cell = queue.remove();
+            int cx = cell[0];
+            int cy = cell[1];
             if (goal[cy][cx]) {
                 return true;
             }
@@ -383,9 +228,7 @@ public final class Deadlock {
                     continue;
                 }
                 regionStamp[ny][nx] = regionToken;
-                queueX[tail] = nx;
-                queueY[tail] = ny;
-                tail++;
+                queue.add(new int[] {nx, ny});
             }
         }
         return false;
@@ -393,19 +236,16 @@ public final class Deadlock {
 
     private boolean regionHasGoal(Coordinate startBox) {
         advanceRegionToken();
+        Queue<int[]> queue = new ArrayDeque<>();
         if (!inBounds(startBox.x, startBox.y)) {
             return false;
         }
-        int head = 0;
-        int tail = 0;
         regionStamp[startBox.y][startBox.x] = regionToken;
-        queueX[tail] = startBox.x;
-        queueY[tail] = startBox.y;
-        tail++;
-        while (head < tail) {
-            int cx = queueX[head];
-            int cy = queueY[head];
-            head++;
+        queue.add(new int[] {startBox.x, startBox.y});
+        while (!queue.isEmpty()) {
+            int[] cell = queue.remove();
+            int cx = cell[0];
+            int cy = cell[1];
             if (goal[cy][cx]) {
                 return true;
             }
@@ -425,9 +265,7 @@ public final class Deadlock {
                     continue;
                 }
                 regionStamp[ny][nx] = regionToken;
-                queueX[tail] = nx;
-                queueY[tail] = ny;
-                tail++;
+                queue.add(new int[] {nx, ny});
             }
         }
         return false;

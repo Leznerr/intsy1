@@ -3,13 +3,9 @@ package solver;
 import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.Queue;
-import java.util.HashMap;
-import java.util.Map;
 
 public final class Heuristic {
     private static final int INF = 1_000_000;
-    private static final int REGION_BLOCK_PENALTY = 5000;
-    private static final int HORIZONTAL_PENALTY = 100;
     private static int[][][] goalDistanceGrids = new int[0][][];
     private static Coordinate[] cachedGoals = new Coordinate[0];
     private static int rows;
@@ -25,14 +21,6 @@ public final class Heuristic {
     private static int[] way = new int[0];
     private static int[] minv = new int[0];
     private static boolean[] used = new boolean[0];
-    private static int[][] regionStamp = new int[0][0];
-    private static int regionToken = 1;
-    private static int[][] boxStamp = new int[0][0];
-    private static int boxToken = 1;
-    private static int[] queueX = new int[0];
-    private static int[] queueY = new int[0];
-    private static int goalMaxX;
-    private static Map<Long, Integer> assignmentCache = new HashMap<>();
 
     private Heuristic() {}
 
@@ -52,13 +40,6 @@ public final class Heuristic {
             way = new int[0];
             minv = new int[0];
             used = new boolean[0];
-            regionStamp = new int[0][0];
-            boxStamp = new int[0][0];
-            queueX = new int[0];
-            queueY = new int[0];
-            regionToken = 1;
-            boxToken = 1;
-            assignmentCache.clear();
             return;
         }
 
@@ -75,20 +56,8 @@ public final class Heuristic {
             fillWithInf(goalDistanceGrids[g]);
             bfsFromGoal(g);
         }
-        goalMaxX = 0;
-        for (Coordinate goal : cachedGoals) {
-            if (goal.x > goalMaxX) {
-                goalMaxX = goal.x;
-            }
-        }
-        assignmentCache.clear();
         ensureCostCapacity(cachedGoals.length);
         ensureDpCapacity(cachedGoals.length);
-        regionStamp = new int[rows][cols];
-        boxStamp = new int[rows][cols];
-        regionToken = 1;
-        boxToken = 1;
-        ensureQueueCapacity(Math.max(rows * cols, 1));
     }
 
     public static int evaluate(State state) {
@@ -104,15 +73,7 @@ public final class Heuristic {
         if (goalCount < boxCount) {
             return Integer.MAX_VALUE;
         }
-        long boxesKey = computeBoxesKey(boxes);
-        Integer cached = assignmentCache.get(boxesKey);
-        int assignment;
-        if (cached != null) {
-            assignment = cached;
-        } else {
-            assignment = assignmentLowerBound(boxes, boxCount, goalCount);
-            assignmentCache.put(boxesKey, assignment);
-        }
+        int assignment = assignmentLowerBound(boxes, boxCount, goalCount);
         if (assignment >= INF) {
             return Integer.MAX_VALUE;
         }
@@ -182,79 +143,27 @@ public final class Heuristic {
         if (goalCount == 0) {
             return Integer.MAX_VALUE;
         }
-        if (goalCount < boxCount) {
-            return Integer.MAX_VALUE;
+        if (goalCount <= 15) {
+            return assignWithBitmask(boxes, boxCount, goalCount);
         }
         int size = Math.max(boxCount, goalCount);
         ensureCostCapacity(size);
-        markBoxes(boxes);
+        for (int i = 0; i < size; i++) {
+            Arrays.fill(reusableCost[i], 0, size, INF);
+        }
         for (int b = 0; b < boxCount; b++) {
-            boolean anyFinite = false;
-            for (int g = 0; g < goalCount; g++) {
-                int cost = computePairCost(boxes, b, g);
-                reusableCost[b][g] = cost;
-                if (cost < INF) {
-                    anyFinite = true;
-                }
-            }
-            if (!anyFinite) {
-                Coordinate box = boxes[b];
-                int fallback = INF;
-                if (inBounds(box.x, box.y)) {
-                    for (int g = 0; g < goalCount; g++) {
-                        int base = goalDistanceGrids[g][box.y][box.x];
-                        if (base < fallback) {
-                            fallback = base;
-                        }
-                    }
-                }
-                if (fallback >= INF) {
-                    return Integer.MAX_VALUE;
-                }
-                int penalized = fallback + REGION_BLOCK_PENALTY;
-                if (penalized >= INF) {
-                    penalized = INF - 1;
-                }
-                for (int g = 0; g < goalCount; g++) {
-                    reusableCost[b][g] = penalized;
-                }
-            }
             Coordinate box = boxes[b];
-            int offset = box.x - goalMaxX;
-            if (offset > 0) {
-                long extra = (long) offset * HORIZONTAL_PENALTY;
-                for (int g = 0; g < goalCount; g++) {
-                    int current = reusableCost[b][g];
-                    if (current >= INF) {
-                        continue;
-                    }
-                    long adjusted = current + extra;
-                    reusableCost[b][g] = adjusted >= INF ? INF - 1 : (int) adjusted;
-                }
+            if (!inBounds(box.x, box.y)) {
+                return Integer.MAX_VALUE;
             }
-            for (int g = goalCount; g < size; g++) {
-                reusableCost[b][g] = INF;
+            for (int g = 0; g < goalCount; g++) {
+                reusableCost[b][g] = goalDistanceGrids[g][box.y][box.x];
             }
-        }
-        for (int b = boxCount; b < size; b++) {
-            Arrays.fill(reusableCost[b], 0, size, INF);
-        }
-        if (goalCount <= 15) {
-            return assignWithBitmask(boxCount, goalCount);
         }
         return hungarian(reusableCost, size);
     }
 
-    private static long computeBoxesKey(Coordinate[] boxes) {
-        long hash = 1469598103934665603L;
-        for (Coordinate box : boxes) {
-            hash = (hash ^ box.x) * 1099511628211L;
-            hash = (hash ^ box.y) * 1099511628211L;
-        }
-        return hash;
-    }
-
-    private static int assignWithBitmask(int boxCount, int goalCount) {
+    private static int assignWithBitmask(Coordinate[] boxes, int boxCount, int goalCount) {
         ensureDpCapacity(goalCount);
         int limit = dpLimit;
         Arrays.fill(dpCurrent, 0, limit, INF);
@@ -263,6 +172,10 @@ public final class Heuristic {
         int[] next = dpNext;
         for (int b = 0; b < boxCount; b++) {
             Arrays.fill(next, 0, limit, INF);
+            Coordinate box = boxes[b];
+            if (!inBounds(box.x, box.y)) {
+                return Integer.MAX_VALUE;
+            }
             for (int mask = 0; mask < limit; mask++) {
                 int base = current[mask];
                 if (base >= INF) {
@@ -272,7 +185,7 @@ public final class Heuristic {
                     if ((mask & (1 << g)) != 0) {
                         continue;
                     }
-                    int dist = reusableCost[b][g];
+                    int dist = goalDistanceGrids[g][box.y][box.x];
                     if (dist >= INF) {
                         continue;
                     }
@@ -298,119 +211,6 @@ public final class Heuristic {
             }
         }
         return best;
-    }
-
-    private static int computePairCost(Coordinate[] boxes, int boxIndex, int goalIndex) {
-        Coordinate box = boxes[boxIndex];
-        if (!inBounds(box.x, box.y)) {
-            return INF;
-        }
-        Coordinate goal = cachedGoals[goalIndex];
-        if (!inBounds(goal.x, goal.y)) {
-            return INF;
-        }
-        int base = goalDistanceGrids[goalIndex][box.y][box.x];
-        if (base >= INF) {
-            return INF;
-        }
-        if (!boxSharesRegionWithGoal(boxes, boxIndex, goal)) {
-            return INF;
-        }
-        return base;
-    }
-
-    private static boolean boxSharesRegionWithGoal(Coordinate[] boxes, int boxIdx, Coordinate goal) {
-        if (rows == 0 || cols == 0) {
-            return false;
-        }
-        Coordinate start = boxes[boxIdx];
-        if (!inBounds(start.x, start.y)) {
-            return false;
-        }
-        if (!inBounds(goal.x, goal.y)) {
-            return false;
-        }
-        if (start.x == goal.x && start.y == goal.y) {
-            return true;
-        }
-        advanceRegionToken();
-        int token = regionToken;
-        ensureQueueCapacity(Math.max(rows * cols, 1));
-        int head = 0;
-        int tail = 0;
-        queueX[tail] = start.x;
-        queueY[tail] = start.y;
-        regionStamp[start.y][start.x] = token;
-        tail++;
-        while (head < tail) {
-            int cx = queueX[head];
-            int cy = queueY[head];
-            head++;
-            for (int dir = 0; dir < Constants.DIRECTION_X.length; dir++) {
-                int nx = cx + Constants.DIRECTION_X[dir];
-                int ny = cy + Constants.DIRECTION_Y[dir];
-                if (!inBounds(nx, ny)) {
-                    continue;
-                }
-                if (regionStamp[ny][nx] == token) {
-                    continue;
-                }
-                if (cachedMap[ny][nx] == Constants.WALL) {
-                    continue;
-                }
-                if (boxStamp[ny][nx] == boxToken && !(nx == start.x && ny == start.y)) {
-                    continue;
-                }
-                regionStamp[ny][nx] = token;
-                queueX[tail] = nx;
-                queueY[tail] = ny;
-                tail++;
-                if (nx == goal.x && ny == goal.y) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    private static void markBoxes(Coordinate[] boxes) {
-        if (rows == 0 || cols == 0) {
-            return;
-        }
-        advanceBoxToken();
-        for (Coordinate box : boxes) {
-            if (box != null && inBounds(box.x, box.y)) {
-                boxStamp[box.y][box.x] = boxToken;
-            }
-        }
-    }
-
-    private static void advanceRegionToken() {
-        regionToken++;
-        if (regionToken == Integer.MAX_VALUE) {
-            for (int y = 0; y < rows; y++) {
-                Arrays.fill(regionStamp[y], 0);
-            }
-            regionToken = 1;
-        }
-    }
-
-    private static void advanceBoxToken() {
-        boxToken++;
-        if (boxToken == Integer.MAX_VALUE) {
-            for (int y = 0; y < rows; y++) {
-                Arrays.fill(boxStamp[y], 0);
-            }
-            boxToken = 1;
-        }
-    }
-
-    private static void ensureQueueCapacity(int capacity) {
-        if (queueX.length >= capacity) {
-            return;
-        }
-        queueX = new int[capacity];
-        queueY = new int[capacity];
     }
 
     private static void ensureCostCapacity(int size) {

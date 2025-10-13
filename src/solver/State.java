@@ -6,7 +6,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 public final class State {
     private static final AtomicLong INSERTION_SEQUENCE = new AtomicLong(1L);
-    private static final int HEURISTIC_WEIGHT = 150;
+    private static final int HEURISTIC_WEIGHT = 1000;
 
     private final Coordinate player;
     private final Coordinate[] boxes;
@@ -21,7 +21,6 @@ public final class State {
     private final long hash;
     private final char[] prePushWalk;
     private final int movedBoxIndex;
-    private final int pushDistance;
 
     private State(Coordinate player,
                   Coordinate[] boxes,
@@ -34,8 +33,7 @@ public final class State {
                   long insertionId,
                   long hash,
                   char[] prePushWalk,
-                  int movedBoxIndex,
-                  int pushDistance) {
+                  int movedBoxIndex) {
         this.player = player;
         this.boxes = boxes;
         this.parent = parent;
@@ -55,13 +53,12 @@ public final class State {
         this.hash = hash;
         this.prePushWalk = prePushWalk == null ? new char[0] : prePushWalk.clone();
         this.movedBoxIndex = movedBoxIndex;
-        this.pushDistance = pushDistance;
     }
 
     public static State initial(Coordinate player, Coordinate[] boxes, int heuristic) {
         Coordinate[] orderedBoxes = copyAndSort(boxes);
         long hash = computeHash(player, orderedBoxes);
-        return new State(player, orderedBoxes, null, '\0', false, 0, 0, heuristic, 0L, hash, new char[0], -1, 0);
+        return new State(player, orderedBoxes, null, '\0', false, 0, 0, heuristic, 0L, hash, new char[0], -1);
     }
 
     public static State walk(State parent, Coordinate nextPlayer, char move) {
@@ -76,36 +73,62 @@ public final class State {
                 parent.insertionId,
                 parent.hash,
                 new char[0],
-                -1,
-                0);
+                -1);
     }
 
     public static State push(State parent,
                               Coordinate nextPlayer,
-                              Coordinate[] orderedBoxes,
+                              Coordinate[] updatedBoxes,
                               char move,
                               int heuristic,
-                              char[] prePushWalk,
-                              int movedIndex,
-                              int pushDistance) {
-        int additionalDepth = prePushWalk == null ? 0 : prePushWalk.length;
-        int normalizedDistance = pushDistance <= 0 ? 1 : pushDistance;
-        Coordinate[] stored = cloneBoxes(orderedBoxes);
+                              char[] prePushWalk) {
+        Coordinate[] ordered = copyAndSort(updatedBoxes);
         long insertion = INSERTION_SEQUENCE.getAndIncrement();
-        long hash = computeHash(nextPlayer, stored);
+        long hash = computeHash(nextPlayer, ordered);
+        Coordinate newLocation = findMovedCoordinate(parent.getBoxes(), ordered);
+        int movedIndex = findIndex(ordered, newLocation);
+        int additionalDepth = prePushWalk == null ? 0 : prePushWalk.length;
         return new State(nextPlayer,
-                stored,
+                ordered,
                 parent,
                 move,
                 true,
-                parent.depth + additionalDepth + normalizedDistance,
-                parent.pushes + normalizedDistance,
+                parent.depth + additionalDepth + 1,
+                parent.pushes + 1,
                 heuristic,
                 insertion,
                 hash,
                 prePushWalk,
-                movedIndex,
-                normalizedDistance);
+                movedIndex);
+    }
+
+    private static int findIndex(Coordinate[] boxes, Coordinate target) {
+        for (int i = 0; i < boxes.length; i++) {
+            Coordinate box = boxes[i];
+            if (box.x == target.x && box.y == target.y) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static Coordinate findMovedCoordinate(Coordinate[] previous, Coordinate[] current) {
+        for (Coordinate candidate : current) {
+            boolean exists = false;
+            for (Coordinate prior : previous) {
+                if (candidate.x == prior.x && candidate.y == prior.y) {
+                    exists = true;
+                    break;
+                }
+            }
+            if (!exists) {
+                return candidate;
+            }
+        }
+        if (current.length > 0) {
+            return current[0];
+        }
+        throw new IllegalStateException("Unable to determine moved box location");
     }
 
     private static Coordinate[] copyAndSort(Coordinate[] boxes) {
@@ -127,10 +150,6 @@ public final class State {
             hash = (hash ^ box.y) * 1099511628211L;
         }
         return hash;
-    }
-
-    private static Coordinate[] cloneBoxes(Coordinate[] boxes) {
-        return boxes.clone();
     }
 
     public Coordinate getPlayer() {
@@ -215,10 +234,8 @@ public final class State {
                     sequence[index++] = move;
                 }
             }
-            for (int repeat = 0; repeat < node.pushDistance; repeat++) {
-                if (index < sequence.length) {
-                    sequence[index++] = node.lastMove;
-                }
+            if (index < sequence.length) {
+                sequence[index++] = node.lastMove;
             }
         }
         return new String(sequence, 0, index);
