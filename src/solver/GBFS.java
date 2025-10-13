@@ -289,11 +289,11 @@ public final class GBFS {
                     continue;
                 }
             }
+            char[] prePushWalk = reconstructPath(startX, startY, px, py);
             if (!deadlockDetector.regionHasGoalForMove(state.getBoxes(), boxIdx, destX, destY)) {
                 stats.recordRegionPruned();
                 continue;
             }
-            char[] prePushWalk = reconstructPath(startX, startY, px, py);
             int slideX = destX;
             int slideY = destY;
             if (isCorridorCell(destX, destY, dir)) {
@@ -340,10 +340,6 @@ public final class GBFS {
             int playerX = slideX - Constants.DIRECTION_X[dir];
             int playerY = slideY - Constants.DIRECTION_Y[dir];
             Coordinate nextPlayer = new Coordinate(playerX, playerY);
-            if (deadlockDetector.isWallLineFreeze(finalBox.x, finalBox.y, updatedBoxes)) {
-                stats.recordLineFreezePruned();
-                continue;
-            }
             stats.recordPushCandidate();
             int heuristic = Heuristic.evaluate(nextPlayer, updatedBoxes);
             if (heuristic == Integer.MAX_VALUE) {
@@ -570,7 +566,6 @@ public final class GBFS {
             return;
         }
         System.out.println("region pruned: " + stats.getRegionPruned());
-        System.out.println("line-freeze pruned: " + stats.getLineFreezePruned());
         System.out.println("corner deadlocks: " + stats.getCornerDeadlockCount());
         System.out.println("two-by-two deadlocks: " + stats.getTwoByTwoDeadlockCount());
         System.out.println("wall-line deadlocks: " + stats.getWallLineDeadlockCount());

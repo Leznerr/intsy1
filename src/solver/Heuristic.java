@@ -8,13 +8,13 @@ import java.util.Map;
 
 public final class Heuristic {
     private static final int INF = 1_000_000;
+    private static final int REGION_BLOCK_PENALTY = 5000;
     private static final int HORIZONTAL_PENALTY = 100;
     private static int[][][] goalDistanceGrids = new int[0][][];
     private static Coordinate[] cachedGoals = new Coordinate[0];
     private static int rows;
     private static int cols;
     private static char[][] cachedMap = new char[0][0];
-    private static boolean[][] goalMask = new boolean[0][0];
     private static int[] dpCurrent = new int[0];
     private static int[] dpNext = new int[0];
     private static int dpLimit = 0;
@@ -33,7 +33,6 @@ public final class Heuristic {
     private static int[] queueY = new int[0];
     private static int goalMaxX;
     private static Map<Long, Integer> assignmentCache = new HashMap<>();
-    private static final RegionData REGION_DATA = new RegionData();
 
     private Heuristic() {}
 
@@ -57,7 +56,6 @@ public final class Heuristic {
             boxStamp = new int[0][0];
             queueX = new int[0];
             queueY = new int[0];
-            goalMask = new boolean[0][0];
             regionToken = 1;
             boxToken = 1;
             assignmentCache.clear();
@@ -81,12 +79,6 @@ public final class Heuristic {
         for (Coordinate goal : cachedGoals) {
             if (goal.x > goalMaxX) {
                 goalMaxX = goal.x;
-            }
-        }
-        goalMask = new boolean[rows][cols];
-        for (Coordinate goal : cachedGoals) {
-            if (goal != null && inBounds(goal.x, goal.y)) {
-                goalMask[goal.y][goal.x] = true;
             }
         }
         assignmentCache.clear();
@@ -197,37 +189,37 @@ public final class Heuristic {
         ensureCostCapacity(size);
         markBoxes(boxes);
         for (int b = 0; b < boxCount; b++) {
-            Arrays.fill(reusableCost[b], 0, size, INF);
-            Coordinate box = boxes[b];
-            if (box == null || !inBounds(box.x, box.y)) {
-                continue;
-            }
-            RegionData region = REGION_DATA;
-            if (!analyzeBoxRegion(boxes, b, region)) {
-                continue;
-            }
-            if (region.goals == 0 || region.boxes > region.goals) {
-                continue;
-            }
             boolean anyFinite = false;
             for (int g = 0; g < goalCount; g++) {
-                Coordinate goal = cachedGoals[g];
-                if (goal == null || !inBounds(goal.x, goal.y)) {
-                    continue;
+                int cost = computePairCost(boxes, b, g);
+                reusableCost[b][g] = cost;
+                if (cost < INF) {
+                    anyFinite = true;
                 }
-                if (regionStamp[goal.y][goal.x] != region.token) {
-                    continue;
-                }
-                int base = goalDistanceGrids[g][box.y][box.x];
-                if (base >= INF) {
-                    continue;
-                }
-                reusableCost[b][g] = base;
-                anyFinite = true;
             }
             if (!anyFinite) {
-                continue;
+                Coordinate box = boxes[b];
+                int fallback = INF;
+                if (inBounds(box.x, box.y)) {
+                    for (int g = 0; g < goalCount; g++) {
+                        int base = goalDistanceGrids[g][box.y][box.x];
+                        if (base < fallback) {
+                            fallback = base;
+                        }
+                    }
+                }
+                if (fallback >= INF) {
+                    return Integer.MAX_VALUE;
+                }
+                int penalized = fallback + REGION_BLOCK_PENALTY;
+                if (penalized >= INF) {
+                    penalized = INF - 1;
+                }
+                for (int g = 0; g < goalCount; g++) {
+                    reusableCost[b][g] = penalized;
+                }
             }
+            Coordinate box = boxes[b];
             int offset = box.x - goalMaxX;
             if (offset > 0) {
                 long extra = (long) offset * HORIZONTAL_PENALTY;
@@ -239,6 +231,9 @@ public final class Heuristic {
                     long adjusted = current + extra;
                     reusableCost[b][g] = adjusted >= INF ? INF - 1 : (int) adjusted;
                 }
+            }
+            for (int g = goalCount; g < size; g++) {
+                reusableCost[b][g] = INF;
             }
         }
         for (int b = boxCount; b < size; b++) {
@@ -305,6 +300,79 @@ public final class Heuristic {
         return best;
     }
 
+    private static int computePairCost(Coordinate[] boxes, int boxIndex, int goalIndex) {
+        Coordinate box = boxes[boxIndex];
+        if (!inBounds(box.x, box.y)) {
+            return INF;
+        }
+        Coordinate goal = cachedGoals[goalIndex];
+        if (!inBounds(goal.x, goal.y)) {
+            return INF;
+        }
+        int base = goalDistanceGrids[goalIndex][box.y][box.x];
+        if (base >= INF) {
+            return INF;
+        }
+        if (!boxSharesRegionWithGoal(boxes, boxIndex, goal)) {
+            return INF;
+        }
+        return base;
+    }
+
+    private static boolean boxSharesRegionWithGoal(Coordinate[] boxes, int boxIdx, Coordinate goal) {
+        if (rows == 0 || cols == 0) {
+            return false;
+        }
+        Coordinate start = boxes[boxIdx];
+        if (!inBounds(start.x, start.y)) {
+            return false;
+        }
+        if (!inBounds(goal.x, goal.y)) {
+            return false;
+        }
+        if (start.x == goal.x && start.y == goal.y) {
+            return true;
+        }
+        advanceRegionToken();
+        int token = regionToken;
+        ensureQueueCapacity(Math.max(rows * cols, 1));
+        int head = 0;
+        int tail = 0;
+        queueX[tail] = start.x;
+        queueY[tail] = start.y;
+        regionStamp[start.y][start.x] = token;
+        tail++;
+        while (head < tail) {
+            int cx = queueX[head];
+            int cy = queueY[head];
+            head++;
+            for (int dir = 0; dir < Constants.DIRECTION_X.length; dir++) {
+                int nx = cx + Constants.DIRECTION_X[dir];
+                int ny = cy + Constants.DIRECTION_Y[dir];
+                if (!inBounds(nx, ny)) {
+                    continue;
+                }
+                if (regionStamp[ny][nx] == token) {
+                    continue;
+                }
+                if (cachedMap[ny][nx] == Constants.WALL) {
+                    continue;
+                }
+                if (boxStamp[ny][nx] == boxToken && !(nx == start.x && ny == start.y)) {
+                    continue;
+                }
+                regionStamp[ny][nx] = token;
+                queueX[tail] = nx;
+                queueY[tail] = ny;
+                tail++;
+                if (nx == goal.x && ny == goal.y) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     private static void markBoxes(Coordinate[] boxes) {
         if (rows == 0 || cols == 0) {
             return;
@@ -343,65 +411,6 @@ public final class Heuristic {
         }
         queueX = new int[capacity];
         queueY = new int[capacity];
-    }
-
-    private static boolean analyzeBoxRegion(Coordinate[] boxes, int boxIdx, RegionData data) {
-        data.reset();
-        if (rows == 0 || cols == 0) {
-            return false;
-        }
-        Coordinate start = boxes[boxIdx];
-        if (start == null || !inBounds(start.x, start.y)) {
-            return false;
-        }
-        ensureQueueCapacity(Math.max(rows * cols, 1));
-        advanceRegionToken();
-        int token = regionToken;
-        data.token = token;
-        int head = 0;
-        int tail = 0;
-        regionStamp[start.y][start.x] = token;
-        queueX[tail] = start.x;
-        queueY[tail] = start.y;
-        tail++;
-        data.boxes = 1;
-        if (goalMask[start.y][start.x]) {
-            data.goals = 1;
-        }
-        while (head < tail) {
-            int cx = queueX[head];
-            int cy = queueY[head];
-            head++;
-            for (int dir = 0; dir < Constants.DIRECTION_X.length; dir++) {
-                int nx = cx + Constants.DIRECTION_X[dir];
-                int ny = cy + Constants.DIRECTION_Y[dir];
-                if (!inBounds(nx, ny)) {
-                    continue;
-                }
-                if (regionStamp[ny][nx] == token) {
-                    continue;
-                }
-                if (cachedMap[ny][nx] == Constants.WALL) {
-                    continue;
-                }
-                if (boxStamp[ny][nx] == boxToken && !(nx == start.x && ny == start.y)) {
-                    regionStamp[ny][nx] = token;
-                    data.boxes++;
-                    if (goalMask[ny][nx]) {
-                        data.goals++;
-                    }
-                    continue;
-                }
-                regionStamp[ny][nx] = token;
-                queueX[tail] = nx;
-                queueY[tail] = ny;
-                tail++;
-                if (goalMask[ny][nx]) {
-                    data.goals++;
-                }
-            }
-        }
-        return true;
     }
 
     private static void ensureCostCapacity(int size) {
@@ -500,17 +509,5 @@ public final class Heuristic {
             result += value;
         }
         return result;
-    }
-
-    private static final class RegionData {
-        int token;
-        int goals;
-        int boxes;
-
-        void reset() {
-            token = 0;
-            goals = 0;
-            boxes = 0;
-        }
     }
 }
