@@ -73,6 +73,7 @@ public final class GBFS {
         long deadline = startTime + TIME_LIMIT_NANOS;
         stats.reset(TIME_LIMIT_NANOS);
         stats.markStart(startTime);
+        deadlockDetector.resetRuleCounters();
 
         long initialSignature = initial.getHash();
         bestCosts.put(initialSignature, encodeCost(initial));
@@ -103,7 +104,19 @@ public final class GBFS {
                     bestGoal = current;
                     stats.updateBestPlanLength(current.getDepth(), current.getPushes());
                 }
-                break;
+                long finishTime = System.nanoTime();
+                stats.recordFirstGoal(finishTime);
+                stats.captureDeadlockCounts(deadlockDetector.getCornerDeadlocks(),
+                        deadlockDetector.getTwoByTwoDeadlocks(),
+                        deadlockDetector.getWallLineDeadlocks());
+                stats.markFinish(finishTime,
+                        false,
+                        current.getDepth(),
+                        current.getPushes(),
+                        bestCosts.size());
+                logSearchTelemetry();
+                String plan = current.reconstructPlan();
+                return new SearchOutcome(plan, true, plan);
             }
 
             expand(current, open, bestCosts, deadline);
@@ -112,18 +125,21 @@ public final class GBFS {
         long finishTime = System.nanoTime();
         boolean limitHit = finishTime > deadline && !open.isEmpty();
 
-        State fallback = selectFallbackState(bestGoal);
-        State planState = fallback;
+        State planState = selectFallbackState(bestGoal);
         String plan = planState.reconstructPlan();
         boolean solved = bestGoal != null;
-        String completePlan = solved ? plan : null;
+        String completePlan = solved ? plan : "";
 
+        stats.captureDeadlockCounts(deadlockDetector.getCornerDeadlocks(),
+                deadlockDetector.getTwoByTwoDeadlocks(),
+                deadlockDetector.getWallLineDeadlocks());
         stats.markFinish(finishTime,
                 limitHit,
                 planState.getDepth(),
                 planState.getPushes(),
                 bestCosts.size());
 
+        logSearchTelemetry();
         return new SearchOutcome(plan, solved, completePlan);
     }
 
@@ -261,50 +277,192 @@ public final class GBFS {
             if (hasBoxAt(destX, destY)) {
                 continue;
             }
-            char[] path = reconstructPath(startX, startY, px, py);
-            State walkTail = appendWalkChain(state, path);
-            Coordinate[] updatedBoxes = state.getBoxes().clone();
-            updatedBoxes[boxIdx] = new Coordinate(destX, destY);
-            Coordinate nextPlayer = new Coordinate(boxX, boxY);
-            stats.recordPushCandidate();
-            int heuristic = Heuristic.evaluate(nextPlayer, updatedBoxes);
-            if (heuristic >= Integer.MAX_VALUE) {
+            if (state.wasPush() && state.getMovedBoxIndex() == boxIdx) {
+                char last = state.getLastMove();
+                char move = Constants.MOVES[dir];
+                if ((last == 'u' && move == 'd')
+                        || (last == 'd' && move == 'u')
+                        || (last == 'l' && move == 'r')
+                        || (last == 'r' && move == 'l')) {
+                    continue;
+                }
+            }
+            char[] prePushWalk = reconstructPath(startX, startY, px, py);
+            if (!deadlockDetector.regionHasGoalForMove(state.getBoxes(), boxIdx, destX, destY)) {
+                stats.recordRegionPruned();
                 continue;
             }
-            State pushState = State.push(walkTail, nextPlayer, updatedBoxes, Constants.MOVES[dir], heuristic);
-            long signature = pushState.getHash();
+            int slideX = destX;
+            int slideY = destY;
+            if (isCorridorCell(destX, destY, dir)) {
+                int stepX = Constants.DIRECTION_X[dir];
+                int stepY = Constants.DIRECTION_Y[dir];
+                while (true) {
+                    int nextX = slideX + stepX;
+                    int nextY = slideY + stepY;
+                    if (!inBounds(nextX, nextY)) {
+                        break;
+                    }
+                    if (mapData[nextY][nextX] == Constants.WALL) {
+                        break;
+                    }
+                    if (hasBoxAt(nextX, nextY)) {
+                        break;
+                    }
+                    slideX = nextX;
+                    slideY = nextY;
+                    if (mapData[slideY][slideX] == Constants.GOAL) {
+                        break;
+                    }
+                    if (!isCorridorCell(slideX, slideY, dir)) {
+                        break;
+                    }
+                }
+            }
+            Coordinate[] updatedBoxes = state.getBoxes().clone();
+            updatedBoxes[boxIdx] = new Coordinate(slideX, slideY);
+            Coordinate forcedPosition = continueForcedSlide(updatedBoxes, boxIdx, dir);
+            if (forcedPosition == null) {
+                stats.recordRegionPruned();
+                continue;
+            }
+            slideX = forcedPosition.x;
+            slideY = forcedPosition.y;
+            if (!deadlockDetector.regionHasGoalForMove(updatedBoxes, boxIdx, slideX, slideY)) {
+                stats.recordRegionPruned();
+                continue;
+            }
+            int movedIndex = repositionBox(updatedBoxes, boxIdx);
+            Coordinate finalBox = updatedBoxes[movedIndex];
+            int pushDistance = Math.abs(finalBox.x - boxX) + Math.abs(finalBox.y - boxY);
+            int playerX = slideX - Constants.DIRECTION_X[dir];
+            int playerY = slideY - Constants.DIRECTION_Y[dir];
+            Coordinate nextPlayer = new Coordinate(playerX, playerY);
+            stats.recordPushCandidate();
+            int heuristic = Heuristic.evaluate(nextPlayer, updatedBoxes);
+            if (heuristic == Integer.MAX_VALUE) {
+                continue;
+            }
+            State finalState = State.push(state,
+                    nextPlayer,
+                    updatedBoxes,
+                    Constants.MOVES[dir],
+                    heuristic,
+                    prePushWalk,
+                    movedIndex,
+                    pushDistance);
+            long signature = finalState.getHash();
             if (!localSignatureBuffer.add(signature)) {
                 stats.recordDuplicatePruned();
                 continue;
             }
-            if (deadlockDetector.isDeadlock(pushState)) {
+            if (deadlockDetector.isDeadlock(finalState)) {
                 stats.recordDeadlockPruned();
                 continue;
             }
-            long encodedCost = encodeCost(pushState);
+            long encodedCost = encodeCost(finalState);
             Long previous = bestCosts.get(signature);
             if (previous != null && !isBetterCost(encodedCost, previous)) {
                 stats.recordDuplicatePruned();
                 continue;
             }
             bestCosts.put(signature, encodedCost);
-            open.add(pushState);
-            updateFrontierCandidates(pushState);
+            open.add(finalState);
+            updateFrontierCandidates(finalState);
             stats.recordEnqueued(open.size());
         }
     }
 
-    private State appendWalkChain(State origin, char[] path) {
-        State tail = origin;
-        int px = origin.getPlayer().x;
-        int py = origin.getPlayer().y;
-        for (char move : path) {
-            int dir = directionIndex(move);
-            px += Constants.DIRECTION_X[dir];
-            py += Constants.DIRECTION_Y[dir];
-            tail = State.walk(tail, new Coordinate(px, py), move);
+    private boolean isCorridorCell(int x, int y, int dir) {
+        if (dir == Constants.UP || dir == Constants.DOWN) {
+            return isWallOrOutOfBounds(x - 1, y) && isWallOrOutOfBounds(x + 1, y);
         }
-        return tail;
+        return isWallOrOutOfBounds(x, y - 1) && isWallOrOutOfBounds(x, y + 1);
+    }
+
+    private Coordinate continueForcedSlide(Coordinate[] boxes, int movedIdx, int dir) {
+        Coordinate current = boxes[movedIdx];
+        int currentX = current.x;
+        int currentY = current.y;
+        while (true) {
+            int forcedDir = findForcedDirection(boxes, movedIdx, currentX, currentY, dir);
+            if (forcedDir != dir) {
+                break;
+            }
+            int nextX = currentX + Constants.DIRECTION_X[dir];
+            int nextY = currentY + Constants.DIRECTION_Y[dir];
+            Coordinate previous = boxes[movedIdx];
+            boxes[movedIdx] = new Coordinate(nextX, nextY);
+            if (!deadlockDetector.regionHasGoalForMove(boxes, movedIdx, nextX, nextY)) {
+                boxes[movedIdx] = previous;
+                return null;
+            }
+            currentX = nextX;
+            currentY = nextY;
+        }
+        return new Coordinate(currentX, currentY);
+    }
+
+    private int findForcedDirection(Coordinate[] boxes,
+                                    int movedIdx,
+                                    int boxX,
+                                    int boxY,
+                                    int incomingDir) {
+        int allowedDir = -1;
+        for (int candidate = 0; candidate < Constants.DIRECTION_X.length; candidate++) {
+            if (candidate == oppositeDirection(incomingDir)) {
+                continue;
+            }
+            int playerX = boxX - Constants.DIRECTION_X[candidate];
+            int playerY = boxY - Constants.DIRECTION_Y[candidate];
+            if (!inBounds(playerX, playerY) || mapData[playerY][playerX] == Constants.WALL) {
+                continue;
+            }
+            if (hasBoxAt(boxes, movedIdx, playerX, playerY)) {
+                continue;
+            }
+            int nextX = boxX + Constants.DIRECTION_X[candidate];
+            int nextY = boxY + Constants.DIRECTION_Y[candidate];
+            if (!inBounds(nextX, nextY) || mapData[nextY][nextX] == Constants.WALL) {
+                continue;
+            }
+            if (hasBoxAt(boxes, movedIdx, nextX, nextY)) {
+                continue;
+            }
+            if (allowedDir != -1) {
+                return -1;
+            }
+            allowedDir = candidate;
+        }
+        return allowedDir;
+    }
+
+    private boolean hasBoxAt(Coordinate[] boxes, int excludeIdx, int x, int y) {
+        for (int i = 0; i < boxes.length; i++) {
+            if (i == excludeIdx) {
+                continue;
+            }
+            Coordinate candidate = boxes[i];
+            if (candidate.x == x && candidate.y == y) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private int oppositeDirection(int dir) {
+        switch (dir) {
+            case Constants.UP:
+                return Constants.DOWN;
+            case Constants.DOWN:
+                return Constants.UP;
+            case Constants.LEFT:
+                return Constants.RIGHT;
+            case Constants.RIGHT:
+                return Constants.LEFT;
+            default:
+                return -1;
+        }
     }
 
     private char[] reconstructPath(int startX, int startY, int targetX, int targetY) {
@@ -333,21 +491,6 @@ public final class GBFS {
             cy = py;
         }
         return path;
-    }
-
-    private int directionIndex(char move) {
-        switch (move) {
-            case 'u':
-                return Constants.UP;
-            case 'd':
-                return Constants.DOWN;
-            case 'l':
-                return Constants.LEFT;
-            case 'r':
-                return Constants.RIGHT;
-            default:
-                throw new IllegalArgumentException("Unknown move: " + move);
-        }
     }
 
     private void resetWorkingArrays(State state) {
@@ -408,4 +551,45 @@ public final class GBFS {
         }
         return candDepth < existDepth;
     }
+
+    private boolean isWallOrOutOfBounds(int x, int y) {
+        if (!inBounds(x, y)) {
+            return true;
+        }
+        return mapData[y][x] == Constants.WALL;
+    }
+
+    private void logSearchTelemetry() {
+        if (!Constants.DEBUG_METRICS) {
+            return;
+        }
+        System.out.println("region pruned: " + stats.getRegionPruned());
+        System.out.println("corner deadlocks: " + stats.getCornerDeadlockCount());
+        System.out.println("two-by-two deadlocks: " + stats.getTwoByTwoDeadlockCount());
+        System.out.println("wall-line deadlocks: " + stats.getWallLineDeadlockCount());
+        System.out.println("first goal ms: " + stats.getFirstGoalMillis());
+    }
+
+    private int repositionBox(Coordinate[] boxes, int index) {
+        if (index < 0 || index >= boxes.length) {
+            return index;
+        }
+        Coordinate moved = boxes[index];
+        int pos = index;
+        while (pos > 0 && boxes[pos - 1].compareTo(moved) > 0) {
+            boxes[pos] = boxes[pos - 1];
+            pos--;
+        }
+        if (pos != index) {
+            boxes[pos] = moved;
+            return pos;
+        }
+        while (pos + 1 < boxes.length && moved.compareTo(boxes[pos + 1]) > 0) {
+            boxes[pos] = boxes[pos + 1];
+            pos++;
+        }
+        boxes[pos] = moved;
+        return pos;
+    }
+
 }
