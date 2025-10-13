@@ -39,6 +39,9 @@ public final class Deadlock {
             if (isFrozenSquare(box.x, box.y)) {
                 return true;
             }
+            if (!regionHasGoalIgnoringBoxes(box.x, box.y)) {
+                return true;
+            }
             if (isCorridorTrap(box)) {
                 return true;
             }
@@ -143,6 +146,92 @@ public final class Deadlock {
             return false;
         }
         return true;
+    }
+
+    public boolean regionHasGoalForMove(Coordinate[] boxes, int movedIdx, int destX, int destY) {
+        if (!inBounds(destX, destY)) {
+            return false;
+        }
+        if (mapData[destY][destX] == Constants.WALL) {
+            return false;
+        }
+
+        advanceRegionToken();
+        int ignoringToken = regionToken;
+        Queue<int[]> queue = new ArrayDeque<>();
+        regionStamp[destY][destX] = ignoringToken;
+        queue.add(new int[] {destX, destY});
+        int goalsInRegion = 0;
+        while (!queue.isEmpty()) {
+            int[] cell = queue.remove();
+            int cx = cell[0];
+            int cy = cell[1];
+            if (goal[cy][cx]) {
+                goalsInRegion++;
+            }
+            for (int dir = 0; dir < Constants.DIRECTION_X.length; dir++) {
+                int nx = cx + Constants.DIRECTION_X[dir];
+                int ny = cy + Constants.DIRECTION_Y[dir];
+                if (!inBounds(nx, ny)) {
+                    continue;
+                }
+                if (regionStamp[ny][nx] == ignoringToken) {
+                    continue;
+                }
+                if (mapData[ny][nx] == Constants.WALL) {
+                    continue;
+                }
+                regionStamp[ny][nx] = ignoringToken;
+                queue.add(new int[] {nx, ny});
+            }
+        }
+        if (goalsInRegion == 0) {
+            return false;
+        }
+
+        int boxesInRegion = 1;
+        for (int i = 0; i < boxes.length; i++) {
+            if (i == movedIdx) {
+                continue;
+            }
+            Coordinate box = boxes[i];
+            if (box != null && inBounds(box.x, box.y)
+                    && regionStamp[box.y][box.x] == ignoringToken) {
+                boxesInRegion++;
+            }
+        }
+        return boxesInRegion <= goalsInRegion;
+    }
+
+    private boolean regionHasGoalIgnoringBoxes(int startX, int startY) {
+        advanceRegionToken();
+        Queue<int[]> queue = new ArrayDeque<>();
+        regionStamp[startY][startX] = regionToken;
+        queue.add(new int[] {startX, startY});
+        while (!queue.isEmpty()) {
+            int[] cell = queue.remove();
+            int cx = cell[0];
+            int cy = cell[1];
+            if (goal[cy][cx]) {
+                return true;
+            }
+            for (int dir = 0; dir < Constants.DIRECTION_X.length; dir++) {
+                int nx = cx + Constants.DIRECTION_X[dir];
+                int ny = cy + Constants.DIRECTION_Y[dir];
+                if (!inBounds(nx, ny)) {
+                    continue;
+                }
+                if (regionStamp[ny][nx] == regionToken) {
+                    continue;
+                }
+                if (mapData[ny][nx] == Constants.WALL) {
+                    continue;
+                }
+                regionStamp[ny][nx] = regionToken;
+                queue.add(new int[] {nx, ny});
+            }
+        }
+        return false;
     }
 
     private boolean regionHasGoal(Coordinate startBox) {
