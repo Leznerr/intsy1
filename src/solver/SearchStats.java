@@ -15,6 +15,7 @@ public final class SearchStats {
     private int bestPlanLength;
     private int bestPlanPushes;
     private long regionPruned;
+    private long lineFreezePruned;
     private long cornerDeadlockCount;
     private long twoByTwoDeadlockCount;
     private long wallLineDeadlockCount;
@@ -39,6 +40,7 @@ public final class SearchStats {
         this.bestPlanLength = other.bestPlanLength;
         this.bestPlanPushes = other.bestPlanPushes;
         this.regionPruned = other.regionPruned;
+        this.lineFreezePruned = other.lineFreezePruned;
         this.cornerDeadlockCount = other.cornerDeadlockCount;
         this.twoByTwoDeadlockCount = other.twoByTwoDeadlockCount;
         this.wallLineDeadlockCount = other.wallLineDeadlockCount;
@@ -68,6 +70,7 @@ public final class SearchStats {
         this.bestPlanLength = -1;
         this.bestPlanPushes = -1;
         this.regionPruned = 0L;
+        this.lineFreezePruned = 0L;
         this.cornerDeadlockCount = 0L;
         this.twoByTwoDeadlockCount = 0L;
         this.wallLineDeadlockCount = 0L;
@@ -127,6 +130,12 @@ public final class SearchStats {
     void recordRegionPruned() {
         if (Constants.DEBUG_METRICS) {
             this.regionPruned++;
+        }
+    }
+
+    void recordLineFreezePruned() {
+        if (Constants.DEBUG_METRICS) {
+            this.lineFreezePruned++;
         }
     }
 
@@ -223,6 +232,10 @@ public final class SearchStats {
 
     public long getRegionPruned() {
         return regionPruned;
+    }
+
+    public long getLineFreezePruned() {
+        return lineFreezePruned;
     }
 
     public long getCornerDeadlockCount() {
