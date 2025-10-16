@@ -12,11 +12,19 @@ public final class ReplayValidator {
         public final boolean fullyValid;
         public final boolean solved;
         public final int lastValidIndex;
+        public final char[][] finalItems;
+        public final int boxesOnGoals;
 
-        ValidationResult(boolean fullyValid, boolean solved, int lastValidIndex) {
+        ValidationResult(boolean fullyValid,
+                         boolean solved,
+                         int lastValidIndex,
+                         char[][] finalItems,
+                         int boxesOnGoals) {
             this.fullyValid = fullyValid;
             this.solved = solved;
             this.lastValidIndex = lastValidIndex;
+            this.finalItems = finalItems;
+            this.boxesOnGoals = boxesOnGoals;
         }
     }
 
@@ -113,7 +121,30 @@ public final class ReplayValidator {
             }
         }
 
-        return new ValidationResult(valid, solved, lastValid);
+        char[][] finalItems = new char[height][width];
+        for (int y = 0; y < height; y++) {
+            java.util.Arrays.fill(finalItems[y], ' ');
+        }
+        int boxesOnGoals = 0;
+        for (int cell : boxSet) {
+            int y = cell / width;
+            int x = cell % width;
+            if (goals[y][x]) {
+                finalItems[y][x] = Constants.BOX_ON_GOAL;
+                boxesOnGoals++;
+            } else {
+                finalItems[y][x] = Constants.BOX;
+            }
+        }
+        if (player != null) {
+            if (goals[player.y][player.x]) {
+                finalItems[player.y][player.x] = Constants.PLAYER_ON_GOAL;
+            } else {
+                finalItems[player.y][player.x] = Constants.PLAYER;
+            }
+        }
+
+        return new ValidationResult(valid, solved, lastValid, finalItems, boxesOnGoals);
     }
 
     private static int index(int x, int y, int width) {
