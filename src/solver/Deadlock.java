@@ -48,6 +48,9 @@ public final class Deadlock {
             if (isCorridorTrap(box)) {
                 return true;
             }
+            if (isImmovable(box.x, box.y, state.getBoxes())) {
+                return true;
+            }
         }
         return false;
     }
@@ -146,6 +149,35 @@ public final class Deadlock {
             return false;
         }
         if (regionHasGoal(box)) {
+            return false;
+        }
+        return true;
+    }
+
+    private boolean isImmovable(int x, int y, Coordinate[] boxes) {
+        if (isGoal(x, y)) {
+            return false;
+        }
+        for (int dir = 0; dir < Constants.DIRECTION_X.length; dir++) {
+            int destX = x + Constants.DIRECTION_X[dir];
+            int destY = y + Constants.DIRECTION_Y[dir];
+            if (isWallOrOutOfBounds(destX, destY)) {
+                continue;
+            }
+            if (hasBox(boxes, -1, destX, destY)) {
+                continue;
+            }
+            int backX = x - Constants.DIRECTION_X[dir];
+            int backY = y - Constants.DIRECTION_Y[dir];
+            if (isWallOrOutOfBounds(backX, backY)) {
+                continue;
+            }
+            if (hasBox(boxes, -1, backX, backY)) {
+                if (!isCorner(backX, backY)) {
+                    return false;
+                }
+                continue;
+            }
             return false;
         }
         return true;
