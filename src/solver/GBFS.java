@@ -271,21 +271,29 @@ public final class GBFS {
             if (hasBoxAt(destX, destY)) {
                 continue;
             }
-            char[] prePushWalk = reconstructPath(startX, startY, px, py);
             if (!deadlockDetector.regionHasGoalForMove(state.getBoxes(), boxIdx, destX, destY)) {
                 regionPrunedCount++;
                 continue;
             }
+            char[] prePushWalk = reconstructPath(startX, startY, px, py);
             Coordinate[] updatedBoxes = state.getBoxes().clone();
             updatedBoxes[boxIdx] = new Coordinate(destX, destY);
             Coordinate nextPlayer = new Coordinate(boxX, boxY);
             stats.recordPushCandidate();
-            int heuristic = Heuristic.evaluate(nextPlayer, updatedBoxes);
-            if (heuristic == Integer.MAX_VALUE) {
-                continue;
-            }
-            State pushState = State.push(state, nextPlayer, updatedBoxes, Constants.MOVES[dir], heuristic, prePushWalk);
+            State pushState = State.push(state, nextPlayer, updatedBoxes, Constants.MOVES[dir], state.getHeuristic(), prePushWalk);
             State finalState = slideAlongCorridor(pushState, dir);
+            int movedIdx = finalState.getMovedBoxIndex();
+            if (movedIdx >= 0) {
+                Coordinate movedBox = finalState.getBoxes()[movedIdx];
+                if (!deadlockDetector.regionHasGoalForMove(finalState.getBoxes(), movedIdx, movedBox.x, movedBox.y)) {
+                    regionPrunedCount++;
+                    continue;
+                }
+                if (deadlockDetector.isWallLineFreeze(movedBox.x, movedBox.y, finalState.getBoxes())) {
+                    stats.recordDeadlockPruned();
+                    continue;
+                }
+            }
             long signature = finalState.getHash();
             if (!localSignatureBuffer.add(signature)) {
                 stats.recordDuplicatePruned();
@@ -295,6 +303,11 @@ public final class GBFS {
                 stats.recordDeadlockPruned();
                 continue;
             }
+            int heuristic = Heuristic.evaluate(finalState);
+            if (heuristic == Integer.MAX_VALUE) {
+                continue;
+            }
+            finalState = finalState.withHeuristic(heuristic);
             long encodedCost = encodeCost(finalState);
             Long previous = bestCosts.get(signature);
             if (previous != null && !isBetterCost(encodedCost, previous)) {
@@ -339,12 +352,7 @@ public final class GBFS {
             Coordinate nextPlayer = new Coordinate(box.x, box.y);
             Coordinate[] nextBoxes = current.getBoxes().clone();
             nextBoxes[movedIdx] = new Coordinate(nextX, nextY);
-            int heuristic = Heuristic.evaluate(nextPlayer, nextBoxes);
-            if (heuristic == Integer.MAX_VALUE) {
-                break;
-            }
-            // no heuristic gating
-            State nextState = State.push(current, nextPlayer, nextBoxes, Constants.MOVES[dir], heuristic, EMPTY_PATH);
+            State nextState = State.push(current, nextPlayer, nextBoxes, Constants.MOVES[dir], current.getHeuristic(), EMPTY_PATH);
             if (deadlockDetector.isDeadlock(nextState)) {
                 break;
             }

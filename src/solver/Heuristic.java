@@ -21,6 +21,12 @@ public final class Heuristic {
     private static int[] way = new int[0];
     private static int[] minv = new int[0];
     private static boolean[] used = new boolean[0];
+    private static int[][] regionStamp = new int[0][0];
+    private static int regionToken = 1;
+    private static int[][] occupancyStamp = new int[0][0];
+    private static int occupancyToken = 1;
+    private static int[] regionQueueX = new int[0];
+    private static int[] regionQueueY = new int[0];
 
     private Heuristic() {}
 
@@ -40,6 +46,12 @@ public final class Heuristic {
             way = new int[0];
             minv = new int[0];
             used = new boolean[0];
+            regionStamp = new int[0][0];
+            occupancyStamp = new int[0][0];
+            regionQueueX = new int[0];
+            regionQueueY = new int[0];
+            regionToken = 1;
+            occupancyToken = 1;
             return;
         }
 
@@ -49,6 +61,7 @@ public final class Heuristic {
         for (int y = 0; y < rows; y++) {
             System.arraycopy(mapData[y], 0, cachedMap[y], 0, cols);
         }
+        ensureRegionStructures(rows, cols);
 
         cachedGoals = goals.clone();
         goalDistanceGrids = new int[cachedGoals.length][rows][cols];
@@ -148,6 +161,7 @@ public final class Heuristic {
         }
         int size = Math.max(boxCount, goalCount);
         ensureCostCapacity(size);
+        ensureRegionStructures(rows, cols);
         for (int i = 0; i < size; i++) {
             Arrays.fill(reusableCost[i], 0, size, INF);
         }
@@ -156,7 +170,18 @@ public final class Heuristic {
             if (!inBounds(box.x, box.y)) {
                 return Integer.MAX_VALUE;
             }
+            markOccupancy(boxes, b);
+            int token = floodRegionFrom(box);
             for (int g = 0; g < goalCount; g++) {
+                Coordinate goal = cachedGoals[g];
+                if (!inBounds(goal.x, goal.y)) {
+                    reusableCost[b][g] = INF;
+                    continue;
+                }
+                if (token == 0 || regionStamp[goal.y][goal.x] != token) {
+                    reusableCost[b][g] = INF;
+                    continue;
+                }
                 reusableCost[b][g] = goalDistanceGrids[g][box.y][box.x];
             }
         }
@@ -247,6 +272,111 @@ public final class Heuristic {
             dpNext = new int[limit];
         }
         dpLimit = limit;
+    }
+
+    private static void ensureRegionStructures(int r, int c) {
+        if (r <= 0 || c <= 0) {
+            regionStamp = new int[0][0];
+            occupancyStamp = new int[0][0];
+            regionQueueX = new int[0];
+            regionQueueY = new int[0];
+            regionToken = 1;
+            occupancyToken = 1;
+            return;
+        }
+        if (regionStamp.length != r || regionStamp[0].length != c) {
+            regionStamp = new int[r][c];
+            regionToken = 1;
+        }
+        if (occupancyStamp.length != r || occupancyStamp[0].length != c) {
+            occupancyStamp = new int[r][c];
+            occupancyToken = 1;
+        }
+        int capacity = r * c;
+        if (regionQueueX.length < capacity) {
+            regionQueueX = new int[capacity];
+            regionQueueY = new int[capacity];
+        }
+    }
+
+    private static void markOccupancy(Coordinate[] boxes, int skipIdx) {
+        if (rows <= 0 || cols <= 0) {
+            return;
+        }
+        advanceOccupancyToken();
+        for (int i = 0; i < boxes.length; i++) {
+            if (i == skipIdx) {
+                continue;
+            }
+            Coordinate other = boxes[i];
+            if (other == null) {
+                continue;
+            }
+            if (!inBounds(other.x, other.y)) {
+                continue;
+            }
+            occupancyStamp[other.y][other.x] = occupancyToken;
+        }
+    }
+
+    private static int floodRegionFrom(Coordinate start) {
+        if (!inBounds(start.x, start.y)) {
+            return 0;
+        }
+        advanceRegionToken();
+        int token = regionToken;
+        int head = 0;
+        int tail = 0;
+        regionStamp[start.y][start.x] = token;
+        regionQueueX[tail] = start.x;
+        regionQueueY[tail] = start.y;
+        tail++;
+        while (head < tail) {
+            int cx = regionQueueX[head];
+            int cy = regionQueueY[head];
+            head++;
+            for (int dir = 0; dir < Constants.DIRECTION_X.length; dir++) {
+                int nx = cx + Constants.DIRECTION_X[dir];
+                int ny = cy + Constants.DIRECTION_Y[dir];
+                if (!inBounds(nx, ny)) {
+                    continue;
+                }
+                if (regionStamp[ny][nx] == token) {
+                    continue;
+                }
+                if (cachedMap[ny][nx] == Constants.WALL) {
+                    continue;
+                }
+                if (occupancyStamp[ny][nx] == occupancyToken) {
+                    continue;
+                }
+                regionStamp[ny][nx] = token;
+                regionQueueX[tail] = nx;
+                regionQueueY[tail] = ny;
+                tail++;
+            }
+        }
+        return token;
+    }
+
+    private static void advanceRegionToken() {
+        regionToken++;
+        if (regionToken == Integer.MAX_VALUE) {
+            for (int y = 0; y < regionStamp.length; y++) {
+                Arrays.fill(regionStamp[y], 0);
+            }
+            regionToken = 1;
+        }
+    }
+
+    private static void advanceOccupancyToken() {
+        occupancyToken++;
+        if (occupancyToken == Integer.MAX_VALUE) {
+            for (int y = 0; y < occupancyStamp.length; y++) {
+                Arrays.fill(occupancyStamp[y], 0);
+            }
+            occupancyToken = 1;
+        }
     }
 
     private static int hungarian(int[][] cost, int n) {

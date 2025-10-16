@@ -184,6 +184,24 @@ public final class State {
         return heuristic;
     }
 
+    public State withHeuristic(int newHeuristic) {
+        if (this.heuristic == newHeuristic) {
+            return this;
+        }
+        return new State(this.player,
+                this.boxes,
+                this.parent,
+                this.lastMove,
+                this.lastMovePush,
+                this.depth,
+                this.pushes,
+                newHeuristic,
+                this.insertionId,
+                this.hash,
+                this.prePushWalk,
+                this.movedBoxIndex);
+    }
+
     public int getFCost() {
         return fCost;
     }

@@ -12,6 +12,8 @@ public final class Deadlock {
     private int boxStampToken = 1;
     private final int[][] regionStamp;
     private int regionToken = 1;
+    private final int[][] occupiedStamp;
+    private int occupiedToken = 1;
 
     public Deadlock(char[][] mapData, Coordinate[] goalCoordinates) {
         this.mapData = mapData;
@@ -25,6 +27,7 @@ public final class Deadlock {
         }
         this.boxStamp = new int[rows][cols];
         this.regionStamp = new int[rows][cols];
+        this.occupiedStamp = new int[rows][cols];
     }
 
     public boolean isDeadlock(State state) {
@@ -157,8 +160,18 @@ public final class Deadlock {
         }
 
         advanceRegionToken();
+        advanceOccupiedToken();
         int ignoringToken = regionToken;
         Queue<int[]> queue = new ArrayDeque<>();
+        for (int i = 0; i < boxes.length; i++) {
+            if (i == movedIdx) {
+                continue;
+            }
+            Coordinate other = boxes[i];
+            if (other != null && inBounds(other.x, other.y)) {
+                occupiedStamp[other.y][other.x] = occupiedToken;
+            }
+        }
         regionStamp[destY][destX] = ignoringToken;
         queue.add(new int[] {destX, destY});
         int goalsInRegion = 0;
@@ -181,6 +194,9 @@ public final class Deadlock {
                 if (mapData[ny][nx] == Constants.WALL) {
                     continue;
                 }
+                if (occupiedStamp[ny][nx] == occupiedToken) {
+                    continue;
+                }
                 regionStamp[ny][nx] = ignoringToken;
                 queue.add(new int[] {nx, ny});
             }
@@ -189,7 +205,10 @@ public final class Deadlock {
             return false;
         }
 
-        int boxesInRegion = 1;
+        int boxesInRegion = 0;
+        if (regionStamp[destY][destX] == ignoringToken) {
+            boxesInRegion++;
+        }
         for (int i = 0; i < boxes.length; i++) {
             if (i == movedIdx) {
                 continue;
@@ -201,6 +220,151 @@ public final class Deadlock {
             }
         }
         return boxesInRegion <= goalsInRegion;
+    }
+
+    public boolean isWallLineFreeze(int x, int y, Coordinate[] boxes) {
+        if (!inBounds(x, y)) {
+            return false;
+        }
+        if (isGoal(x, y)) {
+            return false;
+        }
+        int movedIdx = findBoxIndex(boxes, x, y);
+        if (movedIdx < 0) {
+            return false;
+        }
+
+        boolean verticalAlignment = false;
+        if (isWallOrOutOfBounds(x - 1, y)) {
+            verticalAlignment |= isVerticalLineBlocked(x, y, boxes, movedIdx, -1);
+        }
+        if (!verticalAlignment && isWallOrOutOfBounds(x + 1, y)) {
+            verticalAlignment |= isVerticalLineBlocked(x, y, boxes, movedIdx, 1);
+        }
+        if (verticalAlignment && !regionHasGoalForMove(boxes, movedIdx, x, y)) {
+            return true;
+        }
+
+        boolean horizontalAlignment = false;
+        if (isWallOrOutOfBounds(x, y - 1)) {
+            horizontalAlignment |= isHorizontalLineBlocked(x, y, boxes, movedIdx, -1);
+        }
+        if (!horizontalAlignment && isWallOrOutOfBounds(x, y + 1)) {
+            horizontalAlignment |= isHorizontalLineBlocked(x, y, boxes, movedIdx, 1);
+        }
+        if (horizontalAlignment && !regionHasGoalForMove(boxes, movedIdx, x, y)) {
+            return true;
+        }
+        return false;
+    }
+
+    private boolean isVerticalLineBlocked(int x, int y, Coordinate[] boxes, int movedIdx, int wallDx) {
+        int wallX = x + wallDx;
+        if (!isWallOrOutOfBounds(wallX, y)) {
+            return false;
+        }
+        int oppositeX = x - wallDx;
+        if (!isBlockedByWallOrBox(oppositeX, y, boxes, movedIdx)) {
+            return false;
+        }
+        if (!checkVerticalDirection(x, y, boxes, movedIdx, wallDx, oppositeX, -1)) {
+            return false;
+        }
+        if (!checkVerticalDirection(x, y, boxes, movedIdx, wallDx, oppositeX, 1)) {
+            return false;
+        }
+        return true;
+    }
+
+    private boolean checkVerticalDirection(int x,
+                                           int y,
+                                           Coordinate[] boxes,
+                                           int movedIdx,
+                                           int wallDx,
+                                           int oppositeX,
+                                           int stepY) {
+        int cy = y + stepY;
+        while (inBounds(x, cy) && mapData[cy][x] != Constants.WALL) {
+            if (!isWallOrOutOfBounds(x + wallDx, cy)) {
+                break;
+            }
+            if (!isBlockedByWallOrBox(oppositeX, cy, boxes, movedIdx)) {
+                return false;
+            }
+            cy += stepY;
+        }
+        return true;
+    }
+
+    private boolean isHorizontalLineBlocked(int x, int y, Coordinate[] boxes, int movedIdx, int wallDy) {
+        int wallY = y + wallDy;
+        if (!isWallOrOutOfBounds(x, wallY)) {
+            return false;
+        }
+        int oppositeY = y - wallDy;
+        if (!isBlockedByWallOrBox(x, oppositeY, boxes, movedIdx)) {
+            return false;
+        }
+        if (!checkHorizontalDirection(x, y, boxes, movedIdx, wallDy, oppositeY, -1)) {
+            return false;
+        }
+        if (!checkHorizontalDirection(x, y, boxes, movedIdx, wallDy, oppositeY, 1)) {
+            return false;
+        }
+        return true;
+    }
+
+    private boolean checkHorizontalDirection(int x,
+                                             int y,
+                                             Coordinate[] boxes,
+                                             int movedIdx,
+                                             int wallDy,
+                                             int oppositeY,
+                                             int stepX) {
+        int cx = x + stepX;
+        while (inBounds(cx, y) && mapData[y][cx] != Constants.WALL) {
+            if (!isWallOrOutOfBounds(cx, y + wallDy)) {
+                break;
+            }
+            if (!isBlockedByWallOrBox(cx, oppositeY, boxes, movedIdx)) {
+                return false;
+            }
+            cx += stepX;
+        }
+        return true;
+    }
+
+    private boolean isBlockedByWallOrBox(int x, int y, Coordinate[] boxes, int movedIdx) {
+        if (!inBounds(x, y)) {
+            return true;
+        }
+        if (mapData[y][x] == Constants.WALL) {
+            return true;
+        }
+        return hasBox(boxes, movedIdx, x, y);
+    }
+
+    private boolean hasBox(Coordinate[] boxes, int excludeIdx, int x, int y) {
+        for (int i = 0; i < boxes.length; i++) {
+            if (i == excludeIdx) {
+                continue;
+            }
+            Coordinate box = boxes[i];
+            if (box != null && box.x == x && box.y == y) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private int findBoxIndex(Coordinate[] boxes, int x, int y) {
+        for (int i = 0; i < boxes.length; i++) {
+            Coordinate box = boxes[i];
+            if (box != null && box.x == x && box.y == y) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     private boolean regionHasGoalIgnoringBoxes(int startX, int startY) {
@@ -278,6 +442,16 @@ public final class Deadlock {
                 java.util.Arrays.fill(regionStamp[y], 0);
             }
             regionToken = 1;
+        }
+    }
+
+    private void advanceOccupiedToken() {
+        occupiedToken++;
+        if (occupiedToken == Integer.MAX_VALUE) {
+            for (int y = 0; y < rows; y++) {
+                java.util.Arrays.fill(occupiedStamp[y], 0);
+            }
+            occupiedToken = 1;
         }
     }
 
