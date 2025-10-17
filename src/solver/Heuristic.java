@@ -6,6 +6,8 @@ import java.util.Queue;
 
 public final class Heuristic {
     private static final int INF = 1_000_000;
+    private static final int BACKTRACK_PENALTY = 2;
+    private static final int RETREAT_PENALTY = 1;
     private static int[][][] goalDistanceGrids = new int[0][][];
     private static Coordinate[] cachedGoals = new Coordinate[0];
     private static int rows;
@@ -74,7 +76,18 @@ public final class Heuristic {
     }
 
     public static int evaluate(State state) {
-        return evaluate(state.getPlayer(), state.getBoxes());
+        int base = evaluate(state.getPlayer(), state.getBoxes());
+        if (base >= Integer.MAX_VALUE) {
+            return Integer.MAX_VALUE;
+        }
+        int penalty = 0;
+        penalty += computeBacktrackPenalty(state);
+        penalty += computeRetreatPenalty(state);
+        if (penalty <= 0) {
+            return base;
+        }
+        long adjusted = (long) base + penalty;
+        return adjusted >= Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) adjusted;
     }
 
     public static int evaluate(Coordinate player, Coordinate[] boxes) {
@@ -161,7 +174,6 @@ public final class Heuristic {
         }
         int size = Math.max(boxCount, goalCount);
         ensureCostCapacity(size);
-        ensureRegionStructures(rows, cols);
         for (int i = 0; i < size; i++) {
             Arrays.fill(reusableCost[i], 0, size, INF);
         }
@@ -170,22 +182,30 @@ public final class Heuristic {
             if (!inBounds(box.x, box.y)) {
                 return Integer.MAX_VALUE;
             }
-            markOccupancy(boxes, b);
-            int token = floodRegionFrom(box);
+            boolean reachable = false;
             for (int g = 0; g < goalCount; g++) {
                 Coordinate goal = cachedGoals[g];
                 if (!inBounds(goal.x, goal.y)) {
-                    reusableCost[b][g] = INF;
                     continue;
                 }
-                if (token == 0 || regionStamp[goal.y][goal.x] != token) {
-                    reusableCost[b][g] = INF;
-                    continue;
+                int dist = goalDistanceGrids[g][box.y][box.x];
+                if (dist < INF) {
+                    reusableCost[b][g] = dist;
+                    reachable = true;
                 }
-                reusableCost[b][g] = goalDistanceGrids[g][box.y][box.x];
+            }
+            if (!reachable) {
+                return Integer.MAX_VALUE;
             }
         }
         return hungarian(reusableCost, size);
+    }
+
+    public static int lastPushProgress(State state) {
+        if (state == null) {
+            return 0;
+        }
+        return computeDistanceDelta(state);
     }
 
     private static int assignWithBitmask(Coordinate[] boxes, int boxCount, int goalCount) {
@@ -297,6 +317,116 @@ public final class Heuristic {
             regionQueueX = new int[capacity];
             regionQueueY = new int[capacity];
         }
+    }
+
+    private static int computeBacktrackPenalty(State state) {
+        if (state == null || !state.wasPush()) {
+            return 0;
+        }
+        State parent = state.getParent();
+        if (parent == null || !parent.wasPush()) {
+            return 0;
+        }
+        int movedIdx = state.getMovedBoxIndex();
+        int parentMovedIdx = parent.getMovedBoxIndex();
+        if (movedIdx < 0 || parentMovedIdx < 0) {
+            return 0;
+        }
+        Coordinate previousLocation = findPreviousLocation(state);
+        if (previousLocation == null) {
+            return 0;
+        }
+        Coordinate parentAfter = parent.getBoxes()[parentMovedIdx];
+        if (!sameCoordinate(previousLocation, parentAfter)) {
+            return 0;
+        }
+        Coordinate grandParentLocation = findPreviousLocation(parent);
+        if (grandParentLocation == null) {
+            return 0;
+        }
+        Coordinate currentLocation = state.getBoxes()[movedIdx];
+        if (sameCoordinate(currentLocation, grandParentLocation)) {
+            return BACKTRACK_PENALTY;
+        }
+        return 0;
+    }
+
+    private static int computeRetreatPenalty(State state) {
+        int delta = computeDistanceDelta(state);
+        if (delta < 0) {
+            return RETREAT_PENALTY;
+        }
+        return 0;
+    }
+
+    private static int computeDistanceDelta(State state) {
+        if (state == null || !state.wasPush()) {
+            return 0;
+        }
+        int movedIdx = state.getMovedBoxIndex();
+        if (movedIdx < 0) {
+            return 0;
+        }
+        Coordinate current = state.getBoxes()[movedIdx];
+        Coordinate previous = findPreviousLocation(state);
+        if (current == null || previous == null) {
+            return 0;
+        }
+        int currentDist = nearestGoalDistance(current.x, current.y);
+        int previousDist = nearestGoalDistance(previous.x, previous.y);
+        if (previousDist >= INF) {
+            return 0;
+        }
+        if (currentDist >= INF) {
+            return -previousDist;
+        }
+        return previousDist - currentDist;
+    }
+
+    private static int nearestGoalDistance(int x, int y) {
+        if (!inBounds(x, y) || goalDistanceGrids.length == 0) {
+            return INF;
+        }
+        int best = INF;
+        for (int g = 0; g < goalDistanceGrids.length; g++) {
+            int value = goalDistanceGrids[g][y][x];
+            if (value < best) {
+                best = value;
+            }
+        }
+        return best;
+    }
+
+    private static Coordinate findPreviousLocation(State state) {
+        if (state == null) {
+            return null;
+        }
+        State parent = state.getParent();
+        if (parent == null) {
+            return null;
+        }
+        Coordinate[] before = parent.getBoxes();
+        Coordinate[] after = state.getBoxes();
+        outer:
+        for (Coordinate candidate : before) {
+            for (Coordinate current : after) {
+                if (candidate.x == current.x && candidate.y == current.y) {
+                    continue outer;
+                }
+            }
+            return new Coordinate(candidate.x, candidate.y);
+        }
+        return null;
+    }
+
+    private static boolean sameCoordinate(Coordinate a, Coordinate b) {
+        if (a == b) {
+            return true;
+        }
+        if (a == null || b == null) {
+            return false;
+        }
+        return a.x == b.x && a.y == b.y;
     }
 
     private static void markOccupancy(Coordinate[] boxes, int skipIdx) {
