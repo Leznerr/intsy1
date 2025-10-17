@@ -12,12 +12,14 @@ public class SokoBot {
     private final List<Coordinate> boxList = new ArrayList<>();
     private final List<Coordinate> goalList = new ArrayList<>();
     private SearchStats lastStats = SearchStats.empty();
+    private SearchOutcome lastOutcome = null;
     private static final int SMALL_PUZZLE_BOX_LIMIT = 4;
 
     public String solveSokobanPuzzle(int width, int height, char[][] mapData, char[][] itemsData) {
         player = null;
         boxList.clear();
         goalList.clear();
+        lastOutcome = null;
 
         extractMap(mapData, itemsData, height, width);
 
@@ -27,6 +29,7 @@ public class SokoBot {
         String bfsPlan = trySolveSmallPuzzle(mapData, boxes, player, goals);
         if (bfsPlan != null) {
             lastStats = SearchStats.empty();
+            lastOutcome = new SearchOutcome(bfsPlan, true, bfsPlan);
             return bfsPlan;
         }
 
@@ -36,6 +39,7 @@ public class SokoBot {
         GBFS solver = new GBFS(mapData, goals);
         SearchOutcome outcome = solver.search(initial);
         lastStats = solver.getStatistics();
+        lastOutcome = outcome;
 
         String planToReturn = outcome.getBestPlan();
         ReplayValidator.ValidationResult validation = ReplayValidator.validate(mapData, itemsData, planToReturn);
@@ -88,6 +92,10 @@ public class SokoBot {
 
     public SearchStats getLastStats() {
         return lastStats;
+    }
+
+    public SearchOutcome getLastOutcome() {
+        return lastOutcome;
     }
 
     private String trySolveSmallPuzzle(char[][] mapData, Coordinate[] boxes, Coordinate player, Coordinate[] goals) {

@@ -37,14 +37,17 @@ public final class GBFS {
         }
         cmp = Integer.compare(a.getHeuristic(), b.getHeuristic());
         if (cmp != 0) {
+            Diagnostics.recordComparatorDecision("heuristic");
             return cmp;
         }
         cmp = Integer.compare(a.getPushes(), b.getPushes());
         if (cmp != 0) {
+            Diagnostics.recordComparatorDecision("pushes");
             return cmp;
         }
         cmp = Integer.compare(a.getDepth(), b.getDepth());
         if (cmp != 0) {
+            Diagnostics.recordComparatorDecision("depth");
             return cmp;
         }
         cmp = Character.compare(a.getLastMove(), b.getLastMove());
@@ -54,8 +57,10 @@ public final class GBFS {
         int progressA = Heuristic.lastPushProgress(a);
         int progressB = Heuristic.lastPushProgress(b);
         if (progressA != progressB) {
+            Diagnostics.recordComparatorDecision("progress");
             return Integer.compare(progressB, progressA);
         }
+        Diagnostics.recordComparatorDecision("insertion");
         return Long.compare(a.getInsertionId(), b.getInsertionId());
     };
 
@@ -83,10 +88,12 @@ public final class GBFS {
         long deadline = startTime + TIME_LIMIT_NANOS;
         stats.reset(TIME_LIMIT_NANOS);
         stats.markStart(startTime);
+        Diagnostics.markSearchStart();
 
         long initialSignature = initial.getHash();
         bestCosts.put(initialSignature, encodeCost(initial));
         open.add(initial);
+        Diagnostics.recordOpenSize(open.size());
 
         State bestGoal = initial.isGoal(goalCoordinates) ? initial : null;
         bestFrontierCandidate = initial;
@@ -97,14 +104,22 @@ public final class GBFS {
             if (now > deadline) {
                 break;
             }
+            if (Diagnostics.shouldSample(Diagnostics.getExpandedStates())) {
+                Diagnostics.recordQueueSnapshot(open, stateComparator);
+            }
             State current = open.poll();
             stats.incrementExpanded();
+            Diagnostics.incrementExpanded(current);
+            Diagnostics.checkFirstPush(current, open);
             updateFrontierCandidates(current);
 
             long signature = current.getHash();
             long encoded = encodeCost(current);
             Long recorded = bestCosts.get(signature);
             if (recorded != null && recorded.longValue() != encoded) {
+                if (Diagnostics.ENABLED) {
+                    Diagnostics.recordDuplicateGlobal();
+                }
                 continue;
             }
 
@@ -120,6 +135,7 @@ public final class GBFS {
                         current.getPushes(),
                         bestCosts.size());
                 String plan = current.reconstructPlan();
+                Diagnostics.markSearchFinish(true, false);
                 return new SearchOutcome(plan, true, plan);
             }
 
@@ -139,6 +155,7 @@ public final class GBFS {
                 planState.getDepth(),
                 planState.getPushes(),
                 bestCosts.size());
+        Diagnostics.markSearchFinish(solved, limitHit);
 
         return new SearchOutcome(plan, solved, completePlan);
     }
@@ -256,6 +273,10 @@ public final class GBFS {
                                     int startY,
                                     PriorityQueue<State> open,
                                     Map<Long, Long> bestCosts) {
+        long considerStart = Diagnostics.now();
+        if (Diagnostics.ENABLED) {
+            Diagnostics.recordConsiderPushStart();
+        }
         for (int dir = 0; dir < Constants.DIRECTION_X.length; dir++) {
             int boxX = px + Constants.DIRECTION_X[dir];
             int boxY = py + Constants.DIRECTION_Y[dir];
@@ -280,15 +301,20 @@ public final class GBFS {
             // PRE-PUSH region gate: strict first, then loose fallback
             boolean strictRegionOk = deadlockDetector.regionHasGoalForMove(state.getBoxes(), boxIdx, destX, destY);
             if (!strictRegionOk) {
+                if (Diagnostics.ENABLED) {
+                    Diagnostics.recordPrePrunedStrict();
+                }
                 // fallback to loose connectivity that ignores boxes
                 if (!deadlockDetector.regionHasGoalIgnoringBoxes(destX, destY)) {
                     stats.recordRegionPrePruned();
+                    Diagnostics.recordPrePrunedLooseFail();
                     continue;
                 }
                 int srcD = Heuristic.nearestGoalDistance(boxX, boxY);
                 int dstD = Heuristic.nearestGoalDistance(destX, destY);
                 if (dstD > srcD) {
                     stats.recordRegionPrePruned();
+                    Diagnostics.recordPrePrunedNonWorsen();
                     continue;
                 }
             }
@@ -304,20 +330,24 @@ public final class GBFS {
                 Coordinate movedBox = finalState.getBoxes()[movedIdx];
                 if (!deadlockDetector.regionHasGoalForMove(finalState.getBoxes(), movedIdx, movedBox.x, movedBox.y)) {
                     stats.recordRegionPostPruned();
+                    Diagnostics.recordPostPrunedRegion();
                     continue;
                 }
                 if (deadlockDetector.isWallLineFreeze(movedBox.x, movedBox.y, finalState.getBoxes())) {
                     stats.recordWallLinePruned();
+                    Diagnostics.recordPostPrunedWallLine();
                     continue;
                 }
             }
             long signature = finalState.getHash();
             if (!localSignatureBuffer.add(signature)) {
                 stats.recordDuplicatePruned();
+                Diagnostics.recordDuplicateLocal();
                 continue;
             }
             if (deadlockDetector.isDeadlock(finalState)) {
                 stats.recordDeadlockPruned();
+                Diagnostics.recordPostPrunedDeadlock();
                 continue;
             }
             int heuristic = Heuristic.evaluate(finalState);
@@ -329,12 +359,17 @@ public final class GBFS {
             Long previous = bestCosts.get(signature);
             if (previous != null && !isBetterCost(encodedCost, previous)) {
                 stats.recordDuplicatePruned();
+                Diagnostics.recordDuplicateGlobal();
                 continue;
             }
             bestCosts.put(signature, encodedCost);
             open.add(finalState);
             updateFrontierCandidates(finalState);
             stats.recordEnqueued(open.size());
+            Diagnostics.recordOpenSize(open.size());
+        }
+        if (Diagnostics.ENABLED) {
+            Diagnostics.recordConsiderPushTime(System.nanoTime() - considerStart);
         }
     }
 
