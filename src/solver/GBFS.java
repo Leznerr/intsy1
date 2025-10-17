@@ -47,6 +47,11 @@ public final class GBFS {
         if (cmp != 0) {
             return cmp;
         }
+        int progressA = Heuristic.lastPushProgress(a);
+        int progressB = Heuristic.lastPushProgress(b);
+        if (progressA != progressB) {
+            return Integer.compare(progressB, progressA);
+        }
         return Long.compare(a.getInsertionId(), b.getInsertionId());
     };
 
