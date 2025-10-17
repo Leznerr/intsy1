@@ -399,7 +399,7 @@ public final class Deadlock {
         return -1;
     }
 
-    private boolean regionHasGoalIgnoringBoxes(int startX, int startY) {
+    public boolean regionHasGoalIgnoringBoxes(int startX, int startY) {
         advanceRegionToken();
         Queue<int[]> queue = new ArrayDeque<>();
         regionStamp[startY][startX] = regionToken;

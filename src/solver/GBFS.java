@@ -28,7 +28,6 @@ public final class GBFS {
     private final HashSet<Long> localSignatureBuffer = new HashSet<>();
     private State bestFrontierCandidate;
     private State deepestFrontierCandidate;
-    private long regionPrunedCount;
     private static final char[] EMPTY_PATH = new char[0];
 
     private final Comparator<State> stateComparator = (a, b) -> {
@@ -75,7 +74,6 @@ public final class GBFS {
         long deadline = startTime + TIME_LIMIT_NANOS;
         stats.reset(TIME_LIMIT_NANOS);
         stats.markStart(startTime);
-        regionPrunedCount = 0L;
 
         long initialSignature = initial.getHash();
         bestCosts.put(initialSignature, encodeCost(initial));
@@ -133,7 +131,6 @@ public final class GBFS {
                 planState.getPushes(),
                 bestCosts.size());
 
-        System.out.println("region pruned: " + regionPrunedCount);
         return new SearchOutcome(plan, solved, completePlan);
     }
 
@@ -271,11 +268,12 @@ public final class GBFS {
             if (hasBoxAt(destX, destY)) {
                 continue;
             }
+            // PRE-PUSH region gate: strict first, then loose fallback
             boolean strictRegionOk = deadlockDetector.regionHasGoalForMove(state.getBoxes(), boxIdx, destX, destY);
             if (!strictRegionOk) {
-                // fall back to the loose goal-region test that ignores other boxes
+                // fallback to loose connectivity that ignores boxes
                 if (!deadlockDetector.regionHasGoalIgnoringBoxes(destX, destY)) {
-                    regionPrunedCount++;
+                    stats.recordRegionPrePruned();
                     continue;
                 }
             }
@@ -290,11 +288,11 @@ public final class GBFS {
             if (movedIdx >= 0) {
                 Coordinate movedBox = finalState.getBoxes()[movedIdx];
                 if (!deadlockDetector.regionHasGoalForMove(finalState.getBoxes(), movedIdx, movedBox.x, movedBox.y)) {
-                    regionPrunedCount++;
+                    stats.recordRegionPostPruned();
                     continue;
                 }
                 if (deadlockDetector.isWallLineFreeze(movedBox.x, movedBox.y, finalState.getBoxes())) {
-                    stats.recordDeadlockPruned();
+                    stats.recordWallLinePruned();
                     continue;
                 }
             }
