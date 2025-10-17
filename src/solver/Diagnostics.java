@@ -57,11 +57,16 @@ public final class Diagnostics {
     private static long prePrunedRegionStrictFast = 0L;
     private static long prePrunedRegionLooseFail = 0L;
     private static long prePrunedNonWorsen = 0L;
+    private static long prePrunedRoomQuota = 0L;
     private static long postPrunedRegion = 0L;
     private static long postPrunedWallLine = 0L;
     private static long postPrunedDeadlock = 0L;
     private static long duplicatePrunedLocal = 0L;
     private static long duplicatePrunedGlobal = 0L;
+    private static long stickyGoalBlocked = 0L;
+    private static long lbWorsePruned = 0L;
+    private static long macroStepsTotal = 0L;
+    private static long macroStepsSaved = 0L;
 
     private static long comparatorDepthDecisions = 0L;
     private static long comparatorPushDecisions = 0L;
@@ -126,11 +131,16 @@ public final class Diagnostics {
         prePrunedRegionStrictFast = 0L;
         prePrunedRegionLooseFail = 0L;
         prePrunedNonWorsen = 0L;
+        prePrunedRoomQuota = 0L;
         postPrunedRegion = 0L;
         postPrunedWallLine = 0L;
         postPrunedDeadlock = 0L;
         duplicatePrunedLocal = 0L;
         duplicatePrunedGlobal = 0L;
+        stickyGoalBlocked = 0L;
+        lbWorsePruned = 0L;
+        macroStepsTotal = 0L;
+        macroStepsSaved = 0L;
 
         comparatorDepthDecisions = 0L;
         comparatorPushDecisions = 0L;
@@ -276,6 +286,13 @@ public final class Diagnostics {
         prePrunedNonWorsen++;
     }
 
+    public static void recordPrePrunedRoomQuota() {
+        if (!ENABLED) {
+            return;
+        }
+        prePrunedRoomQuota++;
+    }
+
     public static void recordPostPrunedRegion() {
         if (!ENABLED) {
             return;
@@ -297,6 +314,13 @@ public final class Diagnostics {
         postPrunedDeadlock++;
     }
 
+    public static void recordStickyGoalBlocked() {
+        if (!ENABLED) {
+            return;
+        }
+        stickyGoalBlocked++;
+    }
+
     public static void recordDuplicateLocal() {
         if (!ENABLED) {
             return;
@@ -309,6 +333,21 @@ public final class Diagnostics {
             return;
         }
         duplicatePrunedGlobal++;
+    }
+
+    public static void recordLBWorsePruned() {
+        if (!ENABLED) {
+            return;
+        }
+        lbWorsePruned++;
+    }
+
+    public static void recordMacroSteps(int total, int saved) {
+        if (!ENABLED) {
+            return;
+        }
+        macroStepsTotal += total;
+        macroStepsSaved += saved;
     }
 
     public static void recordConsiderPushStart() {
@@ -498,11 +537,16 @@ public final class Diagnostics {
         json.put("pre_pruned_region_strict_fast", prePrunedRegionStrictFast);
         json.put("pre_pruned_region_loose_fail", prePrunedRegionLooseFail);
         json.put("pre_pruned_nonworsen", prePrunedNonWorsen);
+        json.put("pre_pruned_room_quota", prePrunedRoomQuota);
         json.put("post_pruned_region", postPrunedRegion);
         json.put("post_pruned_wallline", postPrunedWallLine);
         json.put("post_pruned_deadlock", postPrunedDeadlock);
         json.put("duplicate_pruned_local", duplicatePrunedLocal);
         json.put("duplicate_pruned_global", duplicatePrunedGlobal);
+        json.put("sticky_goal_blocked", stickyGoalBlocked);
+        json.put("lb_worse_pruned", lbWorsePruned);
+        json.put("macro_steps_total", macroStepsTotal);
+        json.put("macro_steps_saved", macroStepsSaved);
         json.put("assignmentLB_avg", assignmentCostSamples == 0 ? -1 : assignmentCostSum / (double) assignmentCostSamples);
         json.put("assignmentLB_p50", percentile(50));
         json.put("assignmentLB_p95", percentile(95));

@@ -126,6 +126,10 @@ public final class Heuristic {
         return assignment + proximity;
     }
 
+    public static int assignmentLBForBoxes(Coordinate[] boxesSorted){
+        return AssignCache.getOrCompute(boxesSorted, () -> assignmentLowerBound(boxesSorted, boxesSorted.length, goalDistanceGrids.length));
+    }
+
     private static void fillWithInf(int[][] grid) {
         for (int y = 0; y < grid.length; y++) {
             Arrays.fill(grid[y], INF);
