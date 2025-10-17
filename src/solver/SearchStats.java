@@ -5,6 +5,9 @@ public final class SearchStats {
     private long pushCandidates;
     private long enqueuedPushes;
     private long deadlockPruned;
+    private long regionPrePruned;
+    private long regionPostPruned;
+    private long wallLinePruned;
     private long duplicatePruned;
     private int openPeak;
     private long closedStates;
@@ -24,6 +27,9 @@ public final class SearchStats {
         this.pushCandidates = other.pushCandidates;
         this.enqueuedPushes = other.enqueuedPushes;
         this.deadlockPruned = other.deadlockPruned;
+        this.regionPrePruned = other.regionPrePruned;
+        this.regionPostPruned = other.regionPostPruned;
+        this.wallLinePruned = other.wallLinePruned;
         this.duplicatePruned = other.duplicatePruned;
         this.openPeak = other.openPeak;
         this.closedStates = other.closedStates;
@@ -48,6 +54,9 @@ public final class SearchStats {
         this.pushCandidates = 0L;
         this.enqueuedPushes = 0L;
         this.deadlockPruned = 0L;
+        this.regionPrePruned = 0L;
+        this.regionPostPruned = 0L;
+        this.wallLinePruned = 0L;
         this.duplicatePruned = 0L;
         this.openPeak = 0;
         this.closedStates = 0L;
@@ -88,6 +97,24 @@ public final class SearchStats {
     void recordDeadlockPruned() {
         if (Constants.DEBUG_METRICS) {
             this.deadlockPruned++;
+        }
+    }
+
+    void recordRegionPrePruned() {
+        if (Constants.DEBUG_METRICS) {
+            this.regionPrePruned++;
+        }
+    }
+
+    void recordRegionPostPruned() {
+        if (Constants.DEBUG_METRICS) {
+            this.regionPostPruned++;
+        }
+    }
+
+    void recordWallLinePruned() {
+        if (Constants.DEBUG_METRICS) {
+            this.wallLinePruned++;
         }
     }
 
@@ -133,6 +160,18 @@ public final class SearchStats {
 
     public long getDeadlockPruned() {
         return deadlockPruned;
+    }
+
+    public long getRegionPrePruned() {
+        return regionPrePruned;
+    }
+
+    public long getRegionPostPruned() {
+        return regionPostPruned;
+    }
+
+    public long getWallLinePruned() {
+        return wallLinePruned;
     }
 
     public long getDuplicatePruned() {
