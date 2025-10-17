@@ -271,9 +271,13 @@ public final class GBFS {
             if (hasBoxAt(destX, destY)) {
                 continue;
             }
-            if (!deadlockDetector.regionHasGoalForMove(state.getBoxes(), boxIdx, destX, destY)) {
-                regionPrunedCount++;
-                continue;
+            boolean strictRegionOk = deadlockDetector.regionHasGoalForMove(state.getBoxes(), boxIdx, destX, destY);
+            if (!strictRegionOk) {
+                // fall back to the loose goal-region test that ignores other boxes
+                if (!deadlockDetector.regionHasGoalIgnoringBoxes(destX, destY)) {
+                    regionPrunedCount++;
+                    continue;
+                }
             }
             char[] prePushWalk = reconstructPath(startX, startY, px, py);
             Coordinate[] updatedBoxes = state.getBoxes().clone();
