@@ -56,9 +56,11 @@ public final class Heuristic {
             bfsQueueY = new int[0];
             regionToken = 1;
             occupancyToken = 1;
+            AssignCache.clear();
             return;
         }
 
+        AssignCache.clear();
         rows = mapData.length;
         cols = rows > 0 ? mapData[0].length : 0;
         cachedMap = new char[rows][cols];
@@ -103,8 +105,13 @@ public final class Heuristic {
             }
             return Integer.MAX_VALUE;
         }
+        Coordinate[] sortedBoxes = boxes.clone();
+        Arrays.sort(sortedBoxes);
+        final Coordinate[] key = sortedBoxes;
+        final int bc = boxCount;
+        final int gc = goalCount;
         long evalStart = Diagnostics.now();
-        int assignment = assignmentLowerBound(boxes, boxCount, goalCount);
+        int assignment = AssignCache.getOrCompute(key, () -> assignmentLowerBound(key, bc, gc));
         boolean inf = assignment >= INF;
         if (Diagnostics.ENABLED) {
             int recordedValue = inf ? Integer.MAX_VALUE : assignment;
@@ -245,7 +252,8 @@ public final class Heuristic {
             for (int g = 0; g < goalCount; g++) {
                 int dist = goalDistanceGrids[g][box.y][box.x];
                 if (dist < INF) {
-                    reusableCost[b][g] = dist;
+                    int cost = dist * dist;
+                    reusableCost[b][g] = cost;
                     reachable = true;
                 }
             }
@@ -299,7 +307,8 @@ public final class Heuristic {
                     }
                     reachable = true;
                     int nextMask = mask | (1 << g);
-                    int candidate = base + dist;
+                    int cost = dist * dist;
+                    int candidate = base + cost;
                     if (candidate < next[nextMask]) {
                         next[nextMask] = candidate;
                     }

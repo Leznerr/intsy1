@@ -28,38 +28,44 @@ public final class Deadlock {
         this.boxStamp = new int[rows][cols];
         this.regionStamp = new int[rows][cols];
         this.occupiedStamp = new int[rows][cols];
+        DeadlockCache.clear();
+        RegionCache.clear();
     }
 
     public boolean isDeadlock(State state) {
         long start = Diagnostics.now();
         try {
             markBoxes(state);
-            for (Coordinate box : state.getBoxes()) {
-                if (isGoal(box.x, box.y)) {
-                    continue;
-                }
-                if (isCorner(box.x, box.y)) {
-                    return true;
-                }
-                if (isFrozenSquare(box.x, box.y)) {
-                    return true;
-                }
-                if (!regionHasGoalIgnoringBoxes(box.x, box.y)) {
-                    return true;
-                }
-                if (isCorridorTrap(box)) {
-                    return true;
-                }
-                if (isImmovable(box.x, box.y, state.getBoxes())) {
-                    return true;
-                }
-            }
-            return false;
+            return DeadlockCache.getOrCompute(state.getBoxes(), () -> evaluateDeadlock(state));
         } finally {
             if (Diagnostics.ENABLED) {
                 Diagnostics.recordDeadlockCheckTime(System.nanoTime() - start);
             }
         }
+    }
+
+    private boolean evaluateDeadlock(State state) {
+        for (Coordinate box : state.getBoxes()) {
+            if (isGoal(box.x, box.y)) {
+                continue;
+            }
+            if (isCorner(box.x, box.y)) {
+                return true;
+            }
+            if (isFrozenSquare(box.x, box.y)) {
+                return true;
+            }
+            if (!regionHasGoalIgnoringBoxes(box.x, box.y)) {
+                return true;
+            }
+            if (isCorridorTrap(box)) {
+                return true;
+            }
+            if (isImmovable(box.x, box.y, state.getBoxes())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void markBoxes(State state) {
@@ -199,73 +205,77 @@ public final class Deadlock {
             if (mapData[destY][destX] == Constants.WALL) {
                 return false;
             }
-
-            advanceRegionToken();
-            advanceOccupiedToken();
-            int ignoringToken = regionToken;
-            Queue<int[]> queue = new ArrayDeque<>();
-            for (int i = 0; i < boxes.length; i++) {
-                if (i == movedIdx) {
-                    continue;
-                }
-                Coordinate other = boxes[i];
-                if (other != null && inBounds(other.x, other.y)) {
-                    occupiedStamp[other.y][other.x] = occupiedToken;
-                }
-            }
-            regionStamp[destY][destX] = ignoringToken;
-            queue.add(new int[] {destX, destY});
-            int goalsInRegion = 0;
-            while (!queue.isEmpty()) {
-                int[] cell = queue.remove();
-                int cx = cell[0];
-                int cy = cell[1];
-                if (goal[cy][cx]) {
-                    goalsInRegion++;
-                }
-                for (int dir = 0; dir < Constants.DIRECTION_X.length; dir++) {
-                    int nx = cx + Constants.DIRECTION_X[dir];
-                    int ny = cy + Constants.DIRECTION_Y[dir];
-                    if (!inBounds(nx, ny)) {
-                        continue;
-                    }
-                    if (regionStamp[ny][nx] == ignoringToken) {
-                        continue;
-                    }
-                    if (mapData[ny][nx] == Constants.WALL) {
-                        continue;
-                    }
-                    if (occupiedStamp[ny][nx] == occupiedToken) {
-                        continue;
-                    }
-                    regionStamp[ny][nx] = ignoringToken;
-                    queue.add(new int[] {nx, ny});
-                }
-            }
-            if (goalsInRegion == 0) {
-                return false;
-            }
-
-            int boxesInRegion = 0;
-            if (regionStamp[destY][destX] == ignoringToken) {
-                boxesInRegion++;
-            }
-            for (int i = 0; i < boxes.length; i++) {
-                if (i == movedIdx) {
-                    continue;
-                }
-                Coordinate box = boxes[i];
-                if (box != null && inBounds(box.x, box.y)
-                        && regionStamp[box.y][box.x] == ignoringToken) {
-                    boxesInRegion++;
-                }
-            }
-            return boxesInRegion <= goalsInRegion;
+            return RegionCache.getOrCompute(boxes, movedIdx, destX, destY,
+                    () -> computeRegionHasGoalForMove(boxes, movedIdx, destX, destY));
         } finally {
             if (Diagnostics.ENABLED) {
                 Diagnostics.recordDeadlockRegionTime(System.nanoTime() - start);
             }
         }
+    }
+
+    private boolean computeRegionHasGoalForMove(Coordinate[] boxes, int movedIdx, int destX, int destY) {
+        advanceRegionToken();
+        advanceOccupiedToken();
+        int ignoringToken = regionToken;
+        Queue<int[]> queue = new ArrayDeque<>();
+        for (int i = 0; i < boxes.length; i++) {
+            if (i == movedIdx) {
+                continue;
+            }
+            Coordinate other = boxes[i];
+            if (other != null && inBounds(other.x, other.y)) {
+                occupiedStamp[other.y][other.x] = occupiedToken;
+            }
+        }
+        regionStamp[destY][destX] = ignoringToken;
+        queue.add(new int[] {destX, destY});
+        int goalsInRegion = 0;
+        while (!queue.isEmpty()) {
+            int[] cell = queue.remove();
+            int cx = cell[0];
+            int cy = cell[1];
+            if (goal[cy][cx]) {
+                goalsInRegion++;
+            }
+            for (int dir = 0; dir < Constants.DIRECTION_X.length; dir++) {
+                int nx = cx + Constants.DIRECTION_X[dir];
+                int ny = cy + Constants.DIRECTION_Y[dir];
+                if (!inBounds(nx, ny)) {
+                    continue;
+                }
+                if (regionStamp[ny][nx] == ignoringToken) {
+                    continue;
+                }
+                if (mapData[ny][nx] == Constants.WALL) {
+                    continue;
+                }
+                if (occupiedStamp[ny][nx] == occupiedToken) {
+                    continue;
+                }
+                regionStamp[ny][nx] = ignoringToken;
+                queue.add(new int[] {nx, ny});
+            }
+        }
+        if (goalsInRegion == 0) {
+            return false;
+        }
+
+        int boxesInRegion = 0;
+        if (regionStamp[destY][destX] == ignoringToken) {
+            boxesInRegion++;
+        }
+        for (int i = 0; i < boxes.length; i++) {
+            if (i == movedIdx) {
+                continue;
+            }
+            Coordinate box = boxes[i];
+            if (box != null && inBounds(box.x, box.y)
+                    && regionStamp[box.y][box.x] == ignoringToken) {
+                boxesInRegion++;
+            }
+        }
+        return boxesInRegion <= goalsInRegion;
     }
 
     public boolean isWallLineFreeze(int x, int y, Coordinate[] boxes) {
@@ -423,34 +433,14 @@ public final class Deadlock {
     public boolean regionHasGoalIgnoringBoxes(int startX, int startY) {
         long start = Diagnostics.now();
         try {
-            advanceRegionToken();
-            Queue<int[]> queue = new ArrayDeque<>();
-            regionStamp[startY][startX] = regionToken;
-            queue.add(new int[] {startX, startY});
-            while (!queue.isEmpty()) {
-                int[] cell = queue.remove();
-                int cx = cell[0];
-                int cy = cell[1];
-                if (goal[cy][cx]) {
-                    return true;
-                }
-                for (int dir = 0; dir < Constants.DIRECTION_X.length; dir++) {
-                    int nx = cx + Constants.DIRECTION_X[dir];
-                    int ny = cy + Constants.DIRECTION_Y[dir];
-                    if (!inBounds(nx, ny)) {
-                        continue;
-                    }
-                    if (regionStamp[ny][nx] == regionToken) {
-                        continue;
-                    }
-                    if (mapData[ny][nx] == Constants.WALL) {
-                        continue;
-                    }
-                    regionStamp[ny][nx] = regionToken;
-                    queue.add(new int[] {nx, ny});
-                }
+            if (!inBounds(startX, startY)) {
+                return false;
             }
-            return false;
+            if (mapData[startY][startX] == Constants.WALL) {
+                return false;
+            }
+            int component = Components.compId[startY][startX];
+            return component >= 0 && Components.goalsInComp[component] > 0;
         } finally {
             if (Diagnostics.ENABLED) {
                 Diagnostics.recordDeadlockLooseTime(System.nanoTime() - start);
