@@ -1,14 +1,11 @@
 package solver;
 
-import java.util.ArrayDeque;
 import java.util.Arrays;
-import java.util.Queue;
 
 public final class Heuristic {
     private static final int INF = 1_000_000;
-    private static final int BACKTRACK_PENALTY = 2;
-    private static final int RETREAT_PENALTY = 1;
     private static int[][][] goalDistanceGrids = new int[0][][];
+    private static int[][] minToAnyGoal = new int[0][0];
     private static Coordinate[] cachedGoals = new Coordinate[0];
     private static int rows;
     private static int cols;
@@ -29,6 +26,8 @@ public final class Heuristic {
     private static int occupancyToken = 1;
     private static int[] regionQueueX = new int[0];
     private static int[] regionQueueY = new int[0];
+    private static int[] bfsQueueX = new int[0];
+    private static int[] bfsQueueY = new int[0];
 
     private Heuristic() {}
 
@@ -37,6 +36,7 @@ public final class Heuristic {
             cachedGoals = new Coordinate[0];
             goalDistanceGrids = new int[0][][];
             cachedMap = new char[0][0];
+            minToAnyGoal = new int[0][0];
             rows = cols = 0;
             dpCurrent = new int[0];
             dpNext = new int[0];
@@ -52,6 +52,8 @@ public final class Heuristic {
             occupancyStamp = new int[0][0];
             regionQueueX = new int[0];
             regionQueueY = new int[0];
+            bfsQueueX = new int[0];
+            bfsQueueY = new int[0];
             regionToken = 1;
             occupancyToken = 1;
             return;
@@ -64,6 +66,7 @@ public final class Heuristic {
             System.arraycopy(mapData[y], 0, cachedMap[y], 0, cols);
         }
         ensureRegionStructures(rows, cols);
+        ensureBfsCapacity(rows * cols);
 
         cachedGoals = goals.clone();
         goalDistanceGrids = new int[cachedGoals.length][rows][cols];
@@ -71,23 +74,16 @@ public final class Heuristic {
             fillWithInf(goalDistanceGrids[g]);
             bfsFromGoal(g);
         }
+        buildMinToAnyGoal();
         ensureCostCapacity(cachedGoals.length);
         ensureDpCapacity(cachedGoals.length);
     }
 
     public static int evaluate(State state) {
-        int base = evaluate(state.getPlayer(), state.getBoxes());
-        if (base >= Integer.MAX_VALUE) {
+        if (state == null) {
             return Integer.MAX_VALUE;
         }
-        int penalty = 0;
-        penalty += computeBacktrackPenalty(state);
-        penalty += computeRetreatPenalty(state);
-        if (penalty <= 0) {
-            return base;
-        }
-        long adjusted = (long) base + penalty;
-        return adjusted >= Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) adjusted;
+        return evaluate(state.getPlayer(), state.getBoxes());
     }
 
     public static int evaluate(Coordinate player, Coordinate[] boxes) {
@@ -119,13 +115,16 @@ public final class Heuristic {
             return;
         }
         int[][] dist = goalDistanceGrids[goalIndex];
-        Queue<int[]> queue = new ArrayDeque<>();
         dist[goal.y][goal.x] = 0;
-        queue.add(new int[] {goal.y, goal.x});
-        while (!queue.isEmpty()) {
-            int[] cur = queue.remove();
-            int cy = cur[0];
-            int cx = cur[1];
+        int head = 0;
+        int tail = 0;
+        bfsQueueX[tail] = goal.x;
+        bfsQueueY[tail] = goal.y;
+        tail++;
+        while (head < tail) {
+            int cx = bfsQueueX[head];
+            int cy = bfsQueueY[head];
+            head++;
             int base = dist[cy][cx];
             for (int dir = 0; dir < Constants.DIRECTION_X.length; dir++) {
                 int nx = cx + Constants.DIRECTION_X[dir];
@@ -138,7 +137,33 @@ public final class Heuristic {
                 }
                 if (dist[ny][nx] > base + 1) {
                     dist[ny][nx] = base + 1;
-                    queue.add(new int[] {ny, nx});
+                    bfsQueueX[tail] = nx;
+                    bfsQueueY[tail] = ny;
+                    tail++;
+                }
+            }
+        }
+    }
+
+    private static void buildMinToAnyGoal() {
+        if (rows <= 0 || cols <= 0) {
+            minToAnyGoal = new int[0][0];
+            return;
+        }
+        minToAnyGoal = new int[rows][cols];
+        for (int y = 0; y < rows; y++) {
+            Arrays.fill(minToAnyGoal[y], INF);
+        }
+        for (int g = 0; g < goalDistanceGrids.length; g++) {
+            int[][] dist = goalDistanceGrids[g];
+            for (int y = 0; y < rows; y++) {
+                int[] distRow = dist[y];
+                int[] minRow = minToAnyGoal[y];
+                for (int x = 0; x < cols; x++) {
+                    int value = distRow[x];
+                    if (value < minRow[x]) {
+                        minRow[x] = value;
+                    }
                 }
             }
         }
@@ -169,25 +194,25 @@ public final class Heuristic {
         if (goalCount == 0) {
             return Integer.MAX_VALUE;
         }
+        if (boxCount > goalCount) {
+            return Integer.MAX_VALUE;
+        }
         if (goalCount <= 15) {
             return assignWithBitmask(boxes, boxCount, goalCount);
         }
-        int size = Math.max(boxCount, goalCount);
+        int size = goalCount;
         ensureCostCapacity(size);
         for (int i = 0; i < size; i++) {
-            Arrays.fill(reusableCost[i], 0, size, INF);
+            Arrays.fill(reusableCost[i], 0, size, 0);
         }
         for (int b = 0; b < boxCount; b++) {
             Coordinate box = boxes[b];
             if (!inBounds(box.x, box.y)) {
                 return Integer.MAX_VALUE;
             }
+            Arrays.fill(reusableCost[b], 0, size, INF);
             boolean reachable = false;
             for (int g = 0; g < goalCount; g++) {
-                Coordinate goal = cachedGoals[g];
-                if (!inBounds(goal.x, goal.y)) {
-                    continue;
-                }
                 int dist = goalDistanceGrids[g][box.y][box.x];
                 if (dist < INF) {
                     reusableCost[b][g] = dist;
@@ -221,6 +246,7 @@ public final class Heuristic {
             if (!inBounds(box.x, box.y)) {
                 return Integer.MAX_VALUE;
             }
+            boolean reachable = false;
             for (int mask = 0; mask < limit; mask++) {
                 int base = current[mask];
                 if (base >= INF) {
@@ -234,12 +260,16 @@ public final class Heuristic {
                     if (dist >= INF) {
                         continue;
                     }
+                    reachable = true;
                     int nextMask = mask | (1 << g);
                     int candidate = base + dist;
                     if (candidate < next[nextMask]) {
                         next[nextMask] = candidate;
                     }
                 }
+            }
+            if (!reachable) {
+                return Integer.MAX_VALUE;
             }
             int[] temp = current;
             current = next;
@@ -300,6 +330,7 @@ public final class Heuristic {
             occupancyStamp = new int[0][0];
             regionQueueX = new int[0];
             regionQueueY = new int[0];
+            ensureBfsCapacity(0);
             regionToken = 1;
             occupancyToken = 1;
             return;
@@ -319,44 +350,16 @@ public final class Heuristic {
         }
     }
 
-    private static int computeBacktrackPenalty(State state) {
-        if (state == null || !state.wasPush()) {
-            return 0;
+    private static void ensureBfsCapacity(int capacity) {
+        if (capacity <= 0) {
+            bfsQueueX = new int[0];
+            bfsQueueY = new int[0];
+            return;
         }
-        State parent = state.getParent();
-        if (parent == null || !parent.wasPush()) {
-            return 0;
+        if (bfsQueueX.length < capacity) {
+            bfsQueueX = new int[capacity];
+            bfsQueueY = new int[capacity];
         }
-        int movedIdx = state.getMovedBoxIndex();
-        int parentMovedIdx = parent.getMovedBoxIndex();
-        if (movedIdx < 0 || parentMovedIdx < 0) {
-            return 0;
-        }
-        Coordinate previousLocation = findPreviousLocation(state);
-        if (previousLocation == null) {
-            return 0;
-        }
-        Coordinate parentAfter = parent.getBoxes()[parentMovedIdx];
-        if (!sameCoordinate(previousLocation, parentAfter)) {
-            return 0;
-        }
-        Coordinate grandParentLocation = findPreviousLocation(parent);
-        if (grandParentLocation == null) {
-            return 0;
-        }
-        Coordinate currentLocation = state.getBoxes()[movedIdx];
-        if (sameCoordinate(currentLocation, grandParentLocation)) {
-            return BACKTRACK_PENALTY;
-        }
-        return 0;
-    }
-
-    private static int computeRetreatPenalty(State state) {
-        int delta = computeDistanceDelta(state);
-        if (delta < 0) {
-            return RETREAT_PENALTY;
-        }
-        return 0;
     }
 
     private static int computeDistanceDelta(State state) {
@@ -383,18 +386,11 @@ public final class Heuristic {
         return previousDist - currentDist;
     }
 
-    private static int nearestGoalDistance(int x, int y) {
-        if (!inBounds(x, y) || goalDistanceGrids.length == 0) {
+    public static int nearestGoalDistance(int x, int y) {
+        if (!inBounds(x, y) || minToAnyGoal.length == 0) {
             return INF;
         }
-        int best = INF;
-        for (int g = 0; g < goalDistanceGrids.length; g++) {
-            int value = goalDistanceGrids[g][y][x];
-            if (value < best) {
-                best = value;
-            }
-        }
-        return best;
+        return minToAnyGoal[y][x];
     }
 
     private static Coordinate findPreviousLocation(State state) {
@@ -417,16 +413,6 @@ public final class Heuristic {
             return new Coordinate(candidate.x, candidate.y);
         }
         return null;
-    }
-
-    private static boolean sameCoordinate(Coordinate a, Coordinate b) {
-        if (a == b) {
-            return true;
-        }
-        if (a == null || b == null) {
-            return false;
-        }
-        return a.x == b.x && a.y == b.y;
     }
 
     private static void markOccupancy(Coordinate[] boxes, int skipIdx) {
