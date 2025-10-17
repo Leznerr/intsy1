@@ -43,6 +43,10 @@ public final class GBFS {
         if (cmp != 0) {
             return cmp;
         }
+        cmp = Integer.compare(a.getDepth(), b.getDepth());
+        if (cmp != 0) {
+            return cmp;
+        }
         cmp = Character.compare(a.getLastMove(), b.getLastMove());
         if (cmp != 0) {
             return cmp;
@@ -278,6 +282,12 @@ public final class GBFS {
             if (!strictRegionOk) {
                 // fallback to loose connectivity that ignores boxes
                 if (!deadlockDetector.regionHasGoalIgnoringBoxes(destX, destY)) {
+                    stats.recordRegionPrePruned();
+                    continue;
+                }
+                int srcD = Heuristic.nearestGoalDistance(boxX, boxY);
+                int dstD = Heuristic.nearestGoalDistance(destX, destY);
+                if (dstD > srcD) {
                     stats.recordRegionPrePruned();
                     continue;
                 }
