@@ -88,18 +88,34 @@ public final class Heuristic {
 
     public static int evaluate(Coordinate player, Coordinate[] boxes) {
         if (boxes.length == 0 || goalDistanceGrids.length == 0) {
+            if (Diagnostics.ENABLED) {
+                Diagnostics.recordAssignmentValue(0);
+                Diagnostics.recordHeuristicEvaluation(false);
+            }
             return 0;
         }
         int boxCount = boxes.length;
         int goalCount = goalDistanceGrids.length;
         if (goalCount < boxCount) {
+            if (Diagnostics.ENABLED) {
+                Diagnostics.recordAssignmentValue(Integer.MAX_VALUE);
+                Diagnostics.recordHeuristicEvaluation(true);
+            }
             return Integer.MAX_VALUE;
         }
+        long evalStart = Diagnostics.now();
         int assignment = assignmentLowerBound(boxes, boxCount, goalCount);
-        if (assignment >= INF) {
+        boolean inf = assignment >= INF;
+        if (Diagnostics.ENABLED) {
+            int recordedValue = inf ? Integer.MAX_VALUE : assignment;
+            Diagnostics.recordAssignmentValue(recordedValue);
+            Diagnostics.recordHeuristicEvaluation(inf);
+            Diagnostics.noteHeuristicDuration(System.nanoTime() - evalStart);
+        }
+        if (inf) {
             return Integer.MAX_VALUE;
         }
-        int proximity = estimatePlayerProximity(player, boxes);
+        int proximity = Diagnostics.zeroProximity() ? 0 : estimatePlayerProximity(player, boxes);
         return assignment + proximity;
     }
 
@@ -188,17 +204,31 @@ public final class Heuristic {
     }
 
     private static int assignmentLowerBound(Coordinate[] boxes, int boxCount, int goalCount) {
+        long start = Diagnostics.now();
         if (boxCount == 0) {
+            if (Diagnostics.ENABLED) {
+                Diagnostics.recordAssignmentTime(System.nanoTime() - start);
+            }
             return 0;
         }
         if (goalCount == 0) {
+            if (Diagnostics.ENABLED) {
+                Diagnostics.recordAssignmentTime(System.nanoTime() - start);
+            }
             return Integer.MAX_VALUE;
         }
         if (boxCount > goalCount) {
+            if (Diagnostics.ENABLED) {
+                Diagnostics.recordAssignmentTime(System.nanoTime() - start);
+            }
             return Integer.MAX_VALUE;
         }
         if (goalCount <= 15) {
-            return assignWithBitmask(boxes, boxCount, goalCount);
+            int value = assignWithBitmask(boxes, boxCount, goalCount);
+            if (Diagnostics.ENABLED) {
+                Diagnostics.recordAssignmentTime(System.nanoTime() - start);
+            }
+            return value;
         }
         int size = goalCount;
         ensureCostCapacity(size);
@@ -220,10 +250,17 @@ public final class Heuristic {
                 }
             }
             if (!reachable) {
+                if (Diagnostics.ENABLED) {
+                    Diagnostics.recordAssignmentTime(System.nanoTime() - start);
+                }
                 return Integer.MAX_VALUE;
             }
         }
-        return hungarian(reusableCost, size);
+        int result = hungarian(reusableCost, size);
+        if (Diagnostics.ENABLED) {
+            Diagnostics.recordAssignmentTime(System.nanoTime() - start);
+        }
+        return result;
     }
 
     public static int lastPushProgress(State state) {

@@ -31,28 +31,35 @@ public final class Deadlock {
     }
 
     public boolean isDeadlock(State state) {
-        markBoxes(state);
-        for (Coordinate box : state.getBoxes()) {
-            if (isGoal(box.x, box.y)) {
-                continue;
+        long start = Diagnostics.now();
+        try {
+            markBoxes(state);
+            for (Coordinate box : state.getBoxes()) {
+                if (isGoal(box.x, box.y)) {
+                    continue;
+                }
+                if (isCorner(box.x, box.y)) {
+                    return true;
+                }
+                if (isFrozenSquare(box.x, box.y)) {
+                    return true;
+                }
+                if (!regionHasGoalIgnoringBoxes(box.x, box.y)) {
+                    return true;
+                }
+                if (isCorridorTrap(box)) {
+                    return true;
+                }
+                if (isImmovable(box.x, box.y, state.getBoxes())) {
+                    return true;
+                }
             }
-            if (isCorner(box.x, box.y)) {
-                return true;
-            }
-            if (isFrozenSquare(box.x, box.y)) {
-                return true;
-            }
-            if (!regionHasGoalIgnoringBoxes(box.x, box.y)) {
-                return true;
-            }
-            if (isCorridorTrap(box)) {
-                return true;
-            }
-            if (isImmovable(box.x, box.y, state.getBoxes())) {
-                return true;
+            return false;
+        } finally {
+            if (Diagnostics.ENABLED) {
+                Diagnostics.recordDeadlockCheckTime(System.nanoTime() - start);
             }
         }
-        return false;
     }
 
     private void markBoxes(State state) {
@@ -184,110 +191,124 @@ public final class Deadlock {
     }
 
     public boolean regionHasGoalForMove(Coordinate[] boxes, int movedIdx, int destX, int destY) {
-        if (!inBounds(destX, destY)) {
-            return false;
-        }
-        if (mapData[destY][destX] == Constants.WALL) {
-            return false;
-        }
+        long start = Diagnostics.now();
+        try {
+            if (!inBounds(destX, destY)) {
+                return false;
+            }
+            if (mapData[destY][destX] == Constants.WALL) {
+                return false;
+            }
 
-        advanceRegionToken();
-        advanceOccupiedToken();
-        int ignoringToken = regionToken;
-        Queue<int[]> queue = new ArrayDeque<>();
-        for (int i = 0; i < boxes.length; i++) {
-            if (i == movedIdx) {
-                continue;
-            }
-            Coordinate other = boxes[i];
-            if (other != null && inBounds(other.x, other.y)) {
-                occupiedStamp[other.y][other.x] = occupiedToken;
-            }
-        }
-        regionStamp[destY][destX] = ignoringToken;
-        queue.add(new int[] {destX, destY});
-        int goalsInRegion = 0;
-        while (!queue.isEmpty()) {
-            int[] cell = queue.remove();
-            int cx = cell[0];
-            int cy = cell[1];
-            if (goal[cy][cx]) {
-                goalsInRegion++;
-            }
-            for (int dir = 0; dir < Constants.DIRECTION_X.length; dir++) {
-                int nx = cx + Constants.DIRECTION_X[dir];
-                int ny = cy + Constants.DIRECTION_Y[dir];
-                if (!inBounds(nx, ny)) {
+            advanceRegionToken();
+            advanceOccupiedToken();
+            int ignoringToken = regionToken;
+            Queue<int[]> queue = new ArrayDeque<>();
+            for (int i = 0; i < boxes.length; i++) {
+                if (i == movedIdx) {
                     continue;
                 }
-                if (regionStamp[ny][nx] == ignoringToken) {
-                    continue;
+                Coordinate other = boxes[i];
+                if (other != null && inBounds(other.x, other.y)) {
+                    occupiedStamp[other.y][other.x] = occupiedToken;
                 }
-                if (mapData[ny][nx] == Constants.WALL) {
-                    continue;
-                }
-                if (occupiedStamp[ny][nx] == occupiedToken) {
-                    continue;
-                }
-                regionStamp[ny][nx] = ignoringToken;
-                queue.add(new int[] {nx, ny});
             }
-        }
-        if (goalsInRegion == 0) {
-            return false;
-        }
+            regionStamp[destY][destX] = ignoringToken;
+            queue.add(new int[] {destX, destY});
+            int goalsInRegion = 0;
+            while (!queue.isEmpty()) {
+                int[] cell = queue.remove();
+                int cx = cell[0];
+                int cy = cell[1];
+                if (goal[cy][cx]) {
+                    goalsInRegion++;
+                }
+                for (int dir = 0; dir < Constants.DIRECTION_X.length; dir++) {
+                    int nx = cx + Constants.DIRECTION_X[dir];
+                    int ny = cy + Constants.DIRECTION_Y[dir];
+                    if (!inBounds(nx, ny)) {
+                        continue;
+                    }
+                    if (regionStamp[ny][nx] == ignoringToken) {
+                        continue;
+                    }
+                    if (mapData[ny][nx] == Constants.WALL) {
+                        continue;
+                    }
+                    if (occupiedStamp[ny][nx] == occupiedToken) {
+                        continue;
+                    }
+                    regionStamp[ny][nx] = ignoringToken;
+                    queue.add(new int[] {nx, ny});
+                }
+            }
+            if (goalsInRegion == 0) {
+                return false;
+            }
 
-        int boxesInRegion = 0;
-        if (regionStamp[destY][destX] == ignoringToken) {
-            boxesInRegion++;
-        }
-        for (int i = 0; i < boxes.length; i++) {
-            if (i == movedIdx) {
-                continue;
-            }
-            Coordinate box = boxes[i];
-            if (box != null && inBounds(box.x, box.y)
-                    && regionStamp[box.y][box.x] == ignoringToken) {
+            int boxesInRegion = 0;
+            if (regionStamp[destY][destX] == ignoringToken) {
                 boxesInRegion++;
             }
+            for (int i = 0; i < boxes.length; i++) {
+                if (i == movedIdx) {
+                    continue;
+                }
+                Coordinate box = boxes[i];
+                if (box != null && inBounds(box.x, box.y)
+                        && regionStamp[box.y][box.x] == ignoringToken) {
+                    boxesInRegion++;
+                }
+            }
+            return boxesInRegion <= goalsInRegion;
+        } finally {
+            if (Diagnostics.ENABLED) {
+                Diagnostics.recordDeadlockRegionTime(System.nanoTime() - start);
+            }
         }
-        return boxesInRegion <= goalsInRegion;
     }
 
     public boolean isWallLineFreeze(int x, int y, Coordinate[] boxes) {
-        if (!inBounds(x, y)) {
-            return false;
-        }
-        if (isGoal(x, y)) {
-            return false;
-        }
-        int movedIdx = findBoxIndex(boxes, x, y);
-        if (movedIdx < 0) {
-            return false;
-        }
+        long start = Diagnostics.now();
+        try {
+            if (!inBounds(x, y)) {
+                return false;
+            }
+            if (isGoal(x, y)) {
+                return false;
+            }
+            int movedIdx = findBoxIndex(boxes, x, y);
+            if (movedIdx < 0) {
+                return false;
+            }
 
-        boolean verticalAlignment = false;
-        if (isWallOrOutOfBounds(x - 1, y)) {
-            verticalAlignment |= isVerticalLineBlocked(x, y, boxes, movedIdx, -1);
-        }
-        if (!verticalAlignment && isWallOrOutOfBounds(x + 1, y)) {
-            verticalAlignment |= isVerticalLineBlocked(x, y, boxes, movedIdx, 1);
-        }
-        if (verticalAlignment && !regionHasGoalForMove(boxes, movedIdx, x, y)) {
-            return true;
-        }
+            boolean verticalAlignment = false;
+            if (isWallOrOutOfBounds(x - 1, y)) {
+                verticalAlignment |= isVerticalLineBlocked(x, y, boxes, movedIdx, -1);
+            }
+            if (!verticalAlignment && isWallOrOutOfBounds(x + 1, y)) {
+                verticalAlignment |= isVerticalLineBlocked(x, y, boxes, movedIdx, 1);
+            }
+            if (verticalAlignment && !regionHasGoalForMove(boxes, movedIdx, x, y)) {
+                return true;
+            }
 
-        boolean horizontalAlignment = false;
-        if (isWallOrOutOfBounds(x, y - 1)) {
-            horizontalAlignment |= isHorizontalLineBlocked(x, y, boxes, movedIdx, -1);
+            boolean horizontalAlignment = false;
+            if (isWallOrOutOfBounds(x, y - 1)) {
+                horizontalAlignment |= isHorizontalLineBlocked(x, y, boxes, movedIdx, -1);
+            }
+            if (!horizontalAlignment && isWallOrOutOfBounds(x, y + 1)) {
+                horizontalAlignment |= isHorizontalLineBlocked(x, y, boxes, movedIdx, 1);
+            }
+            if (horizontalAlignment && !regionHasGoalForMove(boxes, movedIdx, x, y)) {
+                return true;
+            }
+            return false;
+        } finally {
+            if (Diagnostics.ENABLED) {
+                Diagnostics.recordDeadlockFreezeTime(System.nanoTime() - start);
+            }
         }
-        if (!horizontalAlignment && isWallOrOutOfBounds(x, y + 1)) {
-            horizontalAlignment |= isHorizontalLineBlocked(x, y, boxes, movedIdx, 1);
-        }
-        if (horizontalAlignment && !regionHasGoalForMove(boxes, movedIdx, x, y)) {
-            return true;
-        }
-        return false;
     }
 
     private boolean isVerticalLineBlocked(int x, int y, Coordinate[] boxes, int movedIdx, int wallDx) {
@@ -400,34 +421,41 @@ public final class Deadlock {
     }
 
     public boolean regionHasGoalIgnoringBoxes(int startX, int startY) {
-        advanceRegionToken();
-        Queue<int[]> queue = new ArrayDeque<>();
-        regionStamp[startY][startX] = regionToken;
-        queue.add(new int[] {startX, startY});
-        while (!queue.isEmpty()) {
-            int[] cell = queue.remove();
-            int cx = cell[0];
-            int cy = cell[1];
-            if (goal[cy][cx]) {
-                return true;
+        long start = Diagnostics.now();
+        try {
+            advanceRegionToken();
+            Queue<int[]> queue = new ArrayDeque<>();
+            regionStamp[startY][startX] = regionToken;
+            queue.add(new int[] {startX, startY});
+            while (!queue.isEmpty()) {
+                int[] cell = queue.remove();
+                int cx = cell[0];
+                int cy = cell[1];
+                if (goal[cy][cx]) {
+                    return true;
+                }
+                for (int dir = 0; dir < Constants.DIRECTION_X.length; dir++) {
+                    int nx = cx + Constants.DIRECTION_X[dir];
+                    int ny = cy + Constants.DIRECTION_Y[dir];
+                    if (!inBounds(nx, ny)) {
+                        continue;
+                    }
+                    if (regionStamp[ny][nx] == regionToken) {
+                        continue;
+                    }
+                    if (mapData[ny][nx] == Constants.WALL) {
+                        continue;
+                    }
+                    regionStamp[ny][nx] = regionToken;
+                    queue.add(new int[] {nx, ny});
+                }
             }
-            for (int dir = 0; dir < Constants.DIRECTION_X.length; dir++) {
-                int nx = cx + Constants.DIRECTION_X[dir];
-                int ny = cy + Constants.DIRECTION_Y[dir];
-                if (!inBounds(nx, ny)) {
-                    continue;
-                }
-                if (regionStamp[ny][nx] == regionToken) {
-                    continue;
-                }
-                if (mapData[ny][nx] == Constants.WALL) {
-                    continue;
-                }
-                regionStamp[ny][nx] = regionToken;
-                queue.add(new int[] {nx, ny});
+            return false;
+        } finally {
+            if (Diagnostics.ENABLED) {
+                Diagnostics.recordDeadlockLooseTime(System.nanoTime() - start);
             }
         }
-        return false;
     }
 
     private boolean regionHasGoal(Coordinate startBox) {
