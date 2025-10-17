@@ -54,6 +54,7 @@ public final class Diagnostics {
     private static long assignmentCostSamples = 0L;
 
     private static long prePrunedRegionStrict = 0L;
+    private static long prePrunedRegionStrictFast = 0L;
     private static long prePrunedRegionLooseFail = 0L;
     private static long prePrunedNonWorsen = 0L;
     private static long postPrunedRegion = 0L;
@@ -122,6 +123,7 @@ public final class Diagnostics {
         assignmentCostSamples = 0L;
 
         prePrunedRegionStrict = 0L;
+        prePrunedRegionStrictFast = 0L;
         prePrunedRegionLooseFail = 0L;
         prePrunedNonWorsen = 0L;
         postPrunedRegion = 0L;
@@ -251,6 +253,13 @@ public final class Diagnostics {
             return;
         }
         prePrunedRegionStrict++;
+    }
+
+    public static void recordPrePrunedRegionStrictFast() {
+        if (!ENABLED) {
+            return;
+        }
+        prePrunedRegionStrictFast++;
     }
 
     public static void recordPrePrunedLooseFail() {
@@ -486,6 +495,7 @@ public final class Diagnostics {
         json.put("heuristic_INF_hits", heuristicInfHits);
         json.put("heuristic_evaluations", heuristicEvalCalls);
         json.put("pre_pruned_region_strict", prePrunedRegionStrict);
+        json.put("pre_pruned_region_strict_fast", prePrunedRegionStrictFast);
         json.put("pre_pruned_region_loose_fail", prePrunedRegionLooseFail);
         json.put("pre_pruned_nonworsen", prePrunedNonWorsen);
         json.put("post_pruned_region", postPrunedRegion);
