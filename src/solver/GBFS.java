@@ -40,6 +40,12 @@ public final class GBFS {
             Diagnostics.recordComparatorDecision("heuristic");
             return cmp;
         }
+        int progressA = Heuristic.lastPushProgress(a);
+        int progressB = Heuristic.lastPushProgress(b);
+        if (progressA != progressB) {
+            Diagnostics.recordComparatorDecision("progress");
+            return Integer.compare(progressB, progressA);
+        }
         cmp = Integer.compare(a.getPushes(), b.getPushes());
         if (cmp != 0) {
             Diagnostics.recordComparatorDecision("pushes");
@@ -53,12 +59,6 @@ public final class GBFS {
         cmp = Character.compare(a.getLastMove(), b.getLastMove());
         if (cmp != 0) {
             return cmp;
-        }
-        int progressA = Heuristic.lastPushProgress(a);
-        int progressB = Heuristic.lastPushProgress(b);
-        if (progressA != progressB) {
-            Diagnostics.recordComparatorDecision("progress");
-            return Integer.compare(progressB, progressA);
         }
         Diagnostics.recordComparatorDecision("insertion");
         return Long.compare(a.getInsertionId(), b.getInsertionId());
@@ -298,6 +298,18 @@ public final class GBFS {
             if (hasBoxAt(destX, destY)) {
                 continue;
             }
+            if (!deadlockDetector.compHasEnoughGoalsForMove(state.getBoxes(), boxIdx, destX, destY)) {
+                stats.recordRegionPrePruned();
+                Diagnostics.recordPrePrunedRegionStrictFast();
+                continue;
+            }
+            int srcD = Heuristic.nearestGoalDistance(boxX, boxY);
+            int dstD = Heuristic.nearestGoalDistance(destX, destY);
+            if (dstD > srcD + 1) {
+                stats.recordRegionPrePruned();
+                Diagnostics.recordPrePrunedNonWorsen();
+                continue;
+            }
             // PRE-PUSH region gate: strict first, then loose fallback
             boolean strictRegionOk = deadlockDetector.regionHasGoalForMove(state.getBoxes(), boxIdx, destX, destY);
             if (!strictRegionOk) {
@@ -310,8 +322,6 @@ public final class GBFS {
                     Diagnostics.recordPrePrunedLooseFail();
                     continue;
                 }
-                int srcD = Heuristic.nearestGoalDistance(boxX, boxY);
-                int dstD = Heuristic.nearestGoalDistance(destX, destY);
                 if (dstD > srcD) {
                     stats.recordRegionPrePruned();
                     Diagnostics.recordPrePrunedNonWorsen();
@@ -323,11 +333,28 @@ public final class GBFS {
             updatedBoxes[boxIdx] = new Coordinate(destX, destY);
             Coordinate nextPlayer = new Coordinate(boxX, boxY);
             stats.recordPushCandidate();
+            if (deadlockDetector.isCornerNoGoal(destX, destY)
+                    || deadlockDetector.quickFrozenSquare(destX, destY, updatedBoxes)) {
+                stats.recordDeadlockPruned();
+                Diagnostics.recordPostPrunedDeadlock();
+                continue;
+            }
             State pushState = State.push(state, nextPlayer, updatedBoxes, Constants.MOVES[dir], state.getHeuristic(), prePushWalk);
             State finalState = slideAlongCorridor(pushState, dir);
             int movedIdx = finalState.getMovedBoxIndex();
             if (movedIdx >= 0) {
                 Coordinate movedBox = finalState.getBoxes()[movedIdx];
+                if (!deadlockDetector.compHasEnoughGoalsForMove(finalState.getBoxes(), movedIdx, movedBox.x, movedBox.y)) {
+                    stats.recordRegionPrePruned();
+                    Diagnostics.recordPrePrunedRegionStrictFast();
+                    continue;
+                }
+                if (deadlockDetector.isCornerNoGoal(movedBox.x, movedBox.y)
+                        || deadlockDetector.quickFrozenSquare(movedBox.x, movedBox.y, finalState.getBoxes())) {
+                    stats.recordDeadlockPruned();
+                    Diagnostics.recordPostPrunedDeadlock();
+                    continue;
+                }
                 if (!deadlockDetector.regionHasGoalForMove(finalState.getBoxes(), movedIdx, movedBox.x, movedBox.y)) {
                     stats.recordRegionPostPruned();
                     Diagnostics.recordPostPrunedRegion();

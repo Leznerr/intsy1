@@ -113,6 +113,33 @@ public final class Deadlock {
         return hasBox(x, y) && !isGoal(x, y);
     }
 
+    boolean compHasEnoughGoalsForMove(Coordinate[] boxes, int movedIdx, int destX, int destY) {
+        if (!inBounds(destX, destY) || mapData[destY][destX] == Constants.WALL) {
+            return false;
+        }
+        if (isCornerNoGoal(destX, destY)) {
+            return false;
+        }
+        if (quickFrozenSquare(destX, destY, boxes)) {
+            return false;
+        }
+        final int comp = Components.compId[destY][destX];
+        if (comp < 0) {
+            return false;
+        }
+        int count = 1;
+        for (int i = 0; i < boxes.length; i++) {
+            if (i == movedIdx) {
+                continue;
+            }
+            Coordinate b = boxes[i];
+            if (b != null && Components.compId[b.y][b.x] == comp) {
+                count++;
+            }
+        }
+        return count <= Components.goalsInComp[comp];
+    }
+
     private boolean isWallOrOutOfBounds(int x, int y) {
         if (!inBounds(x, y)) {
             return true;
@@ -151,6 +178,50 @@ public final class Deadlock {
             }
         }
         return boxes > 0;
+    }
+
+    boolean isCornerNoGoal(int x, int y) {
+        if (isGoal(x, y)) {
+            return false;
+        }
+        boolean left = isWallOrOutOfBounds(x - 1, y);
+        boolean right = isWallOrOutOfBounds(x + 1, y);
+        boolean up = isWallOrOutOfBounds(x, y - 1);
+        boolean down = isWallOrOutOfBounds(x, y + 1);
+        return (up || down) && (left || right);
+    }
+
+    boolean quickFrozenSquare(int x, int y, Coordinate[] boxes) {
+        int[][] offsets = {{0, 0}, {-1, 0}, {-1, -1}, {0, -1}};
+        for (int[] offset : offsets) {
+            if (formsTwoByTwoFast(offset[0] + x, offset[1] + y, boxes)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean formsTwoByTwoFast(int startX, int startY, Coordinate[] boxes) {
+        int filled = 0;
+        int offGoalBoxes = 0;
+        for (int dy = 0; dy < 2; dy++) {
+            for (int dx = 0; dx < 2; dx++) {
+                int cx = startX + dx;
+                int cy = startY + dy;
+                if (isWallOrOutOfBounds(cx, cy)) {
+                    filled++;
+                    continue;
+                }
+                if (!hasBox(boxes, -1, cx, cy)) {
+                    return false;
+                }
+                if (!isGoal(cx, cy)) {
+                    offGoalBoxes++;
+                }
+                filled++;
+            }
+        }
+        return filled == 4 && offGoalBoxes > 0;
     }
 
     private boolean isCorridorTrap(Coordinate box) {
