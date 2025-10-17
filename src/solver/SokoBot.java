@@ -27,6 +27,7 @@ public class SokoBot {
         Coordinate[] goals = goalList.toArray(new Coordinate[0]);
 
         Components.build(mapData, goals);
+        Rooms.build(mapData, goals);
 
         String bfsPlan = trySolveSmallPuzzle(mapData, boxes, player, goals);
         if (bfsPlan != null) {

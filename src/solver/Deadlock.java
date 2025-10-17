@@ -140,6 +140,21 @@ public final class Deadlock {
         return count <= Components.goalsInComp[comp];
     }
 
+    boolean roomHasEnoughGoalsForMove(Coordinate[] boxes, int movedIdx, int destX, int destY){
+        if (!inBounds(destX,destY) || mapData[destY][destX]==Constants.WALL) return false;
+        int r = Rooms.roomId[destY][destX];
+        if (r < 0) return false;
+        int quota = Rooms.goalsInRoom[r];
+        if (quota <= 0) return true;
+        int count = 1;
+        for (int i=0;i<boxes.length;i++){
+            if (i==movedIdx) continue;
+            Coordinate b = boxes[i];
+            if (b!=null && Rooms.roomId[b.y][b.x]==r) count++;
+        }
+        return count <= quota;
+    }
+
     private boolean isWallOrOutOfBounds(int x, int y) {
         if (!inBounds(x, y)) {
             return true;
