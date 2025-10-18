@@ -2,43 +2,45 @@ package solver;
 
 public final class SearchStats {
     private long expandedStates;
-    private long pushCandidates;
-    private long enqueuedPushes;
-    private long deadlockPruned;
+    private int openPeak;
     private long regionPrePruned;
     private long regionPostPruned;
+    private long cornerPruned;
+    private long freezePruned;
     private long wallLinePruned;
     private long duplicatePruned;
-    private int openPeak;
-    private long closedStates;
-    private long timeLimitNanos;
+    private long corridorSlides;
     private long startTimeNanos;
-    private long endTimeNanos;
+    private long finishTimeNanos;
+    private long firstIncumbentNanos = -1L;
     private boolean timeLimitHit;
-    private int bestPlanLength;
-    private int bestPlanPushes;
+    private long closedStates;
+    private int bestPlanLength = -1;
+    private int bestPlanPushes = -1;
+    private long timeLimitNanos;
 
-    SearchStats() {
+    public SearchStats() {
         reset(0L);
     }
 
     private SearchStats(SearchStats other) {
         this.expandedStates = other.expandedStates;
-        this.pushCandidates = other.pushCandidates;
-        this.enqueuedPushes = other.enqueuedPushes;
-        this.deadlockPruned = other.deadlockPruned;
+        this.openPeak = other.openPeak;
         this.regionPrePruned = other.regionPrePruned;
         this.regionPostPruned = other.regionPostPruned;
+        this.cornerPruned = other.cornerPruned;
+        this.freezePruned = other.freezePruned;
         this.wallLinePruned = other.wallLinePruned;
         this.duplicatePruned = other.duplicatePruned;
-        this.openPeak = other.openPeak;
-        this.closedStates = other.closedStates;
-        this.timeLimitNanos = other.timeLimitNanos;
+        this.corridorSlides = other.corridorSlides;
         this.startTimeNanos = other.startTimeNanos;
-        this.endTimeNanos = other.endTimeNanos;
+        this.finishTimeNanos = other.finishTimeNanos;
+        this.firstIncumbentNanos = other.firstIncumbentNanos;
         this.timeLimitHit = other.timeLimitHit;
+        this.closedStates = other.closedStates;
         this.bestPlanLength = other.bestPlanLength;
         this.bestPlanPushes = other.bestPlanPushes;
+        this.timeLimitNanos = other.timeLimitNanos;
     }
 
     static SearchStats empty() {
@@ -51,21 +53,22 @@ public final class SearchStats {
 
     void reset(long limitNanos) {
         this.expandedStates = 0L;
-        this.pushCandidates = 0L;
-        this.enqueuedPushes = 0L;
-        this.deadlockPruned = 0L;
+        this.openPeak = 0;
         this.regionPrePruned = 0L;
         this.regionPostPruned = 0L;
+        this.cornerPruned = 0L;
+        this.freezePruned = 0L;
         this.wallLinePruned = 0L;
         this.duplicatePruned = 0L;
-        this.openPeak = 0;
-        this.closedStates = 0L;
-        this.timeLimitNanos = limitNanos;
+        this.corridorSlides = 0L;
         this.startTimeNanos = 0L;
-        this.endTimeNanos = 0L;
+        this.finishTimeNanos = 0L;
+        this.firstIncumbentNanos = -1L;
         this.timeLimitHit = false;
+        this.closedStates = 0L;
         this.bestPlanLength = -1;
         this.bestPlanPushes = -1;
+        this.timeLimitNanos = limitNanos;
     }
 
     void markStart(long now) {
@@ -73,93 +76,63 @@ public final class SearchStats {
     }
 
     void markFinish(long now, boolean limitHit, int planLength, int planPushes, long closedSize) {
-        this.endTimeNanos = now;
+        this.finishTimeNanos = now;
         this.timeLimitHit = limitHit;
-        if (planLength >= 0) {
-            this.bestPlanLength = planLength;
-            this.bestPlanPushes = planPushes;
-        }
         this.closedStates = closedSize;
+        this.bestPlanLength = planLength;
+        this.bestPlanPushes = planPushes;
+    }
+
+    void recordFirstIncumbent(long now) {
+        if (firstIncumbentNanos < 0L) {
+            firstIncumbentNanos = now;
+        }
     }
 
     void incrementExpanded() {
-        if (Constants.DEBUG_METRICS) {
-            this.expandedStates++;
-        }
+        expandedStates++;
     }
 
-    void recordPushCandidate() {
-        if (Constants.DEBUG_METRICS) {
-            this.pushCandidates++;
-        }
-    }
-
-    void recordDeadlockPruned() {
-        if (Constants.DEBUG_METRICS) {
-            this.deadlockPruned++;
+    void recordOpenSize(int openSize) {
+        if (openSize > openPeak) {
+            openPeak = openSize;
         }
     }
 
     void recordRegionPrePruned() {
-        if (Constants.DEBUG_METRICS) {
-            this.regionPrePruned++;
-        }
+        regionPrePruned++;
     }
 
     void recordRegionPostPruned() {
-        if (Constants.DEBUG_METRICS) {
-            this.regionPostPruned++;
-        }
+        regionPostPruned++;
+    }
+
+    void recordCornerPruned() {
+        cornerPruned++;
+    }
+
+    void recordFreezePruned() {
+        freezePruned++;
     }
 
     void recordWallLinePruned() {
-        if (Constants.DEBUG_METRICS) {
-            this.wallLinePruned++;
-        }
+        wallLinePruned++;
     }
 
     void recordDuplicatePruned() {
-        if (Constants.DEBUG_METRICS) {
-            this.duplicatePruned++;
-        }
+        duplicatePruned++;
     }
 
-    void recordEnqueued(int openSize) {
-        if (Constants.DEBUG_METRICS) {
-            this.enqueuedPushes++;
-            if (openSize > this.openPeak) {
-                this.openPeak = openSize;
-            }
-        }
-    }
-
-    void updateBestPlanLength(int planLength, int pushes) {
-        if (!Constants.DEBUG_METRICS) {
-            return;
-        }
-        if (planLength < 0) {
-            return;
-        }
-        if (this.bestPlanLength == -1 || planLength < this.bestPlanLength) {
-            this.bestPlanLength = planLength;
-            this.bestPlanPushes = pushes;
-        }
+    void recordCorridorSlide() {
+        corridorSlides++;
     }
 
     public long getExpandedStates() {
         return expandedStates;
     }
 
-    public long getPushCandidates() {
-        return pushCandidates;
-    }
-
-    public long getEnqueuedPushes() {
-        return enqueuedPushes;
-    }
-
-    public long getDeadlockPruned() {
-        return deadlockPruned;
+    public int getOpenPeak() {
+        return openPeak;
     }
 
     public long getRegionPrePruned() {
@@ -170,6 +143,14 @@ public final class SearchStats {
         return regionPostPruned;
     }
 
+    public long getCornerPruned() {
+        return cornerPruned;
+    }
+
+    public long getFreezePruned() {
+        return freezePruned;
+    }
+
     public long getWallLinePruned() {
         return wallLinePruned;
     }
@@ -178,16 +159,30 @@ public final class SearchStats {
         return duplicatePruned;
     }
 
-    public int getOpenPeak() {
-        return openPeak;
+    public long getCorridorSlides() {
+        return corridorSlides;
     }
 
-    public long getClosedStates() {
-        return closedStates;
+    public long getElapsedMillis() {
+        if (startTimeNanos == 0L || finishTimeNanos == 0L || finishTimeNanos < startTimeNanos) {
+            return 0L;
+        }
+        return (finishTimeNanos - startTimeNanos) / 1_000_000L;
+    }
+
+    public long getFirstIncumbentMillis() {
+        if (firstIncumbentNanos < 0L || startTimeNanos == 0L) {
+            return -1L;
+        }
+        return (firstIncumbentNanos - startTimeNanos) / 1_000_000L;
     }
 
     public boolean isTimeLimitHit() {
         return timeLimitHit;
+    }
+
+    public long getClosedStates() {
+        return closedStates;
     }
 
     public int getBestPlanLength() {
@@ -198,22 +193,24 @@ public final class SearchStats {
         return bestPlanPushes;
     }
 
-    public long getElapsedNanos() {
-        if (endTimeNanos == 0L || startTimeNanos == 0L) {
-            return 0L;
+    public String toSummaryString() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("elapsed_ms=").append(getElapsedMillis());
+        sb.append(" expanded=").append(expandedStates);
+        sb.append(" open_peak=").append(openPeak);
+        long incumbent = getFirstIncumbentMillis();
+        if (incumbent >= 0) {
+            sb.append(" first_incumbent_ms=").append(incumbent);
         }
-        return endTimeNanos - startTimeNanos;
-    }
-
-    public long getElapsedMillis() {
-        return getElapsedNanos() / 1_000_000L;
-    }
-
-    public double getElapsedSeconds() {
-        return getElapsedNanos() / 1_000_000_000.0;
-    }
-
-    public double getTimeLimitSeconds() {
-        return timeLimitNanos / 1_000_000_000.0;
+        sb.append(" region_pruned=").append(regionPrePruned);
+        sb.append(" post_region_pruned=").append(regionPostPruned);
+        sb.append(" corner_pruned=").append(cornerPruned);
+        sb.append(" freeze_pruned=").append(freezePruned);
+        sb.append(" wall_line_pruned=").append(wallLinePruned);
+        sb.append(" duplicates=").append(duplicatePruned);
+        sb.append(" corridor_slides=").append(corridorSlides);
+        sb.append(" closed=").append(closedStates);
+        sb.append(" limit_hit=").append(timeLimitHit);
+        return sb.toString();
     }
 }

@@ -125,6 +125,8 @@ public final class RunSolver {
             }
             mapNames.add(arg);
         }
-        Diagnostics.ENABLED = diagEnabled;
+        if (diagEnabled && !Diagnostics.ENABLED) {
+            System.err.println("Diagnostics requested but disabled at compile time.");
+        }
     }
 }
