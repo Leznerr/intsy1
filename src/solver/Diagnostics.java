@@ -11,28 +11,32 @@ public final class Diagnostics {
     private static int emittedLines = 0;
     private static boolean truncated = false;
     private static String pendingSummary = null;
+    private static boolean finished = false;
 
     public static void resetForMap(String mapName) {
         emittedLines = 0;
         truncated = false;
         pendingSummary = null;
+        finished = false;
         if (ENABLED) {
             log("== " + mapName + " ==");
         }
     }
 
     public static void markSearchStart() {
-        if (ENABLED) {
-            log("search:start");
-        }
+        // start banner handled by resetForMap
     }
 
     public static void markSearchFinish(boolean solvedFlag, boolean limitHitFlag) {
         if (!ENABLED) {
             return;
         }
-        log("search:finish solved=" + solvedFlag + " limit_hit=" + limitHitFlag);
-        flushSummary();
+        if (pendingSummary == null) {
+            pendingSummary = "solved=" + solvedFlag + " limit_hit=" + limitHitFlag;
+        }
+        log(pendingSummary);
+        pendingSummary = null;
+        finished = true;
     }
 
     public static void setSummary(String summary) {
@@ -43,7 +47,7 @@ public final class Diagnostics {
     }
 
     public static void emitDiagnostics(long elapsedMillis, boolean solvedFlag, boolean limitHitFlag, long closedSize) {
-        if (!ENABLED) {
+        if (!ENABLED || finished) {
             return;
         }
         if (pendingSummary == null) {
@@ -52,17 +56,9 @@ public final class Diagnostics {
                     + " limit_hit=" + limitHitFlag
                     + " closed=" + closedSize;
         }
-        flushSummary();
-    }
-
-    private static void flushSummary() {
-        if (!ENABLED) {
-            return;
-        }
-        if (pendingSummary != null) {
-            log(pendingSummary);
-            pendingSummary = null;
-        }
+        log(pendingSummary);
+        pendingSummary = null;
+        finished = true;
     }
 
     private static void log(String message) {

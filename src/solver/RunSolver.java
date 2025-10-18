@@ -79,9 +79,11 @@ public final class RunSolver {
                 System.out.println(mapName + " len=" + len
                         + " pushes=" + st.getBestPlanPushes()
                         + " time=" + st.getElapsedMillis() + "ms"
-                        + " prePruned=" + st.getRegionPrePruned()
-                        + " postPruned=" + st.getRegionPostPruned()
-                        + " wallLine=" + st.getWallLinePruned());
+                        + " region=" + st.getRegionPruned()
+                        + " corner=" + st.getCornerPruned()
+                        + " freeze=" + st.getFreezePruned()
+                        + " wallLine=" + st.getWallLinePruned()
+                        + " dup=" + st.getDuplicatePruned());
 
                 if (Diagnostics.ENABLED) {
                     Diagnostics.emitDiagnostics(st.getElapsedMillis(), solved, st.isTimeLimitHit(), st.getClosedStates());
