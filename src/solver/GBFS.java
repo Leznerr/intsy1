@@ -414,12 +414,12 @@ public final class GBFS {
                     Diagnostics.recordPostPrunedDeadlock();
                     continue;
                 }
-                if (!deadlockDetector.compHasEnoughGoalsForMove(finalState, movedIdx, movedBox.x, movedBox.y)) {
+                if (!deadlockDetector.compHasEnoughGoalsForMove(finalState.getBoxes(), movedIdx, movedBox.x, movedBox.y)) {
                     stats.recordRegionPrePruned();
                     Diagnostics.recordPrePrunedRegionStrictFast();
                     continue;
                 }
-                if (!deadlockDetector.roomHasEnoughGoalsForMove(finalState, movedIdx, movedBox.x, movedBox.y)) {
+                if (!deadlockDetector.roomHasEnoughGoalsForMove(finalState.getBoxes(), movedIdx, movedBox.x, movedBox.y)) {
                     stats.recordRegionPrePruned();
                     Diagnostics.recordPrePrunedRegionStrictFast();
                     Diagnostics.recordPrePrunedRoomQuota();
