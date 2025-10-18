@@ -33,10 +33,17 @@ public final class Deadlock {
     }
 
     public boolean isDeadlock(State state) {
+        return isDeadlock(state, null);
+    }
+
+    public boolean isDeadlock(State state, Coordinate lockedGoal) {
         long start = Diagnostics.now();
         try {
             markBoxes(state);
-            return DeadlockCache.getOrCompute(state.getBoxes(), () -> evaluateDeadlock(state));
+            if (lockedGoal == null) {
+                return DeadlockCache.getOrCompute(state.getBoxes(), () -> evaluateDeadlock(state, null));
+            }
+            return evaluateDeadlock(state, lockedGoal);
         } finally {
             if (Diagnostics.ENABLED) {
                 Diagnostics.recordDeadlockCheckTime(System.nanoTime() - start);
@@ -44,8 +51,11 @@ public final class Deadlock {
         }
     }
 
-    private boolean evaluateDeadlock(State state) {
+    private boolean evaluateDeadlock(State state, Coordinate lockedGoal) {
         for (Coordinate box : state.getBoxes()) {
+            if (lockedGoal != null && box.x == lockedGoal.x && box.y == lockedGoal.y) {
+                continue;
+            }
             if (isGoal(box.x, box.y)) {
                 continue;
             }
