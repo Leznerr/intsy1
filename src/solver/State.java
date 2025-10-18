@@ -21,7 +21,6 @@ public final class State {
     private final long hash;
     private final char[] prePushWalk;
     private final int movedBoxIndex;
-    private final long goalDistanceSquaredSum;
 
     private State(Coordinate player,
                   Coordinate[] boxes,
@@ -34,8 +33,7 @@ public final class State {
                   long insertionId,
                   long hash,
                   char[] prePushWalk,
-                  int movedBoxIndex,
-                  long goalDistanceSquaredSum) {
+                  int movedBoxIndex) {
         this.player = player;
         this.boxes = boxes;
         this.parent = parent;
@@ -55,26 +53,12 @@ public final class State {
         this.hash = hash;
         this.prePushWalk = prePushWalk == null ? new char[0] : prePushWalk.clone();
         this.movedBoxIndex = movedBoxIndex;
-        this.goalDistanceSquaredSum = goalDistanceSquaredSum;
     }
 
     public static State initial(Coordinate player, Coordinate[] boxes, int heuristic) {
         Coordinate[] orderedBoxes = copyAndSort(boxes);
         long hash = computeHash(player, orderedBoxes);
-        long goalDistanceSquaredSum = computeGoalDistanceSquaredSum(orderedBoxes);
-        return new State(player,
-                orderedBoxes,
-                null,
-                '\0',
-                false,
-                0,
-                0,
-                heuristic,
-                0L,
-                hash,
-                new char[0],
-                -1,
-                goalDistanceSquaredSum);
+        return new State(player, orderedBoxes, null, '\0', false, 0, 0, heuristic, 0L, hash, new char[0], -1);
     }
 
     public static State walk(State parent, Coordinate nextPlayer, char move) {
@@ -89,8 +73,7 @@ public final class State {
                 parent.insertionId,
                 parent.hash,
                 new char[0],
-                -1,
-                parent.goalDistanceSquaredSum);
+                -1);
     }
 
     public static State push(State parent,
@@ -105,7 +88,6 @@ public final class State {
         Coordinate newLocation = findMovedCoordinate(parent.getBoxes(), ordered);
         int movedIndex = findIndex(ordered, newLocation);
         int additionalDepth = prePushWalk == null ? 0 : prePushWalk.length;
-        long goalDistanceSquaredSum = computeGoalDistanceSquaredSum(ordered);
         return new State(nextPlayer,
                 ordered,
                 parent,
@@ -117,8 +99,7 @@ public final class State {
                 insertion,
                 hash,
                 prePushWalk,
-                movedIndex,
-                goalDistanceSquaredSum);
+                movedIndex);
     }
 
     private static int findIndex(Coordinate[] boxes, Coordinate target) {
@@ -203,10 +184,6 @@ public final class State {
         return heuristic;
     }
 
-    public long getGoalDistanceSquaredSum() {
-        return goalDistanceSquaredSum;
-    }
-
     public State withHeuristic(int newHeuristic) {
         if (this.heuristic == newHeuristic) {
             return this;
@@ -222,8 +199,7 @@ public final class State {
                 this.insertionId,
                 this.hash,
                 this.prePushWalk,
-                this.movedBoxIndex,
-                this.goalDistanceSquaredSum);
+                this.movedBoxIndex);
     }
 
     public int getFCost() {
@@ -294,16 +270,6 @@ public final class State {
             }
         }
         return false;
-    }
-
-    private static long computeGoalDistanceSquaredSum(Coordinate[] boxes) {
-        long total = 0L;
-        for (Coordinate box : boxes) {
-            int distance = Heuristic.nearestGoalDistance(box.x, box.y);
-            long contribution = (long) distance * (long) distance;
-            total += contribution;
-        }
-        return total;
     }
 
     @Override
