@@ -104,10 +104,6 @@ public final class SearchStats {
         regionPruned++;
     }
 
-    void recordRegionPruned() {
-        regionPruned++;
-    }
-
     void recordCornerPruned() {
         cornerPruned++;
     }
@@ -196,9 +192,7 @@ public final class SearchStats {
         sb.append(" expanded=").append(expandedStates);
         sb.append(" open_peak=").append(openPeak);
         long incumbent = getFirstIncumbentMillis();
-        if (incumbent >= 0) {
-            sb.append(" first_incumbent_ms=").append(incumbent);
-        }
+        sb.append(" first_incumbent_ms=").append(incumbent);
         sb.append(" region_pruned=").append(regionPruned);
         sb.append(" corner_pruned=").append(cornerPruned);
         sb.append(" freeze_pruned=").append(freezePruned);
