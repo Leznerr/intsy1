@@ -482,10 +482,23 @@ public final class GBFS {
             if (!deadlockDetector.regionHasGoalForMove(current.getBoxes(), movedIdx, nextX, nextY)) {
                 break;
             }
+            Coordinate[] boxes = current.getBoxes();
+            if (!deadlockDetector.compHasEnoughGoalsForMove(boxes, movedIdx, nextX, nextY)) {
+                break;
+            }
+            if (!deadlockDetector.roomHasEnoughGoalsForMove(boxes, movedIdx, nextX, nextY)) {
+                break;
+            }
+            if (deadlockDetector.isCornerNoGoal(nextX, nextY)) {
+                break;
+            }
+            Coordinate[] nextBoxes = boxes.clone();
+            nextBoxes[movedIdx] = new Coordinate(nextX, nextY);
+            if (deadlockDetector.quickFrozenSquare(nextX, nextY, nextBoxes)) {
+                break;
+            }
             macroAttempted++;
             Coordinate nextPlayer = new Coordinate(box.x, box.y);
-            Coordinate[] nextBoxes = current.getBoxes().clone();
-            nextBoxes[movedIdx] = new Coordinate(nextX, nextY);
             State nextState = State.push(current, nextPlayer, nextBoxes, Constants.MOVES[dir], current.getHeuristic(), EMPTY_PATH);
             if (deadlockDetector.isDeadlock(nextState)) {
                 break;
