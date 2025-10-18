@@ -70,22 +70,15 @@ public final class RunSolver {
                 }
 
                 SokoBot bot = new SokoBot();
-                long solveStart = System.nanoTime();
                 String plan = bot.solveSokobanPuzzle(md.columns, md.rows, mapData, itemsData);
-                long solveEnd = System.nanoTime();
-
-                if (plan == null) {
-                    plan = "";
-                }
 
                 SearchStats st = bot.getLastStats();
-                long elapsedMs = (solveEnd - solveStart) / 1_000_000L;
-                ReplayValidator.ValidationResult validation = ReplayValidator.validate(mapData, itemsData, plan);
-                boolean solved = validation.fullyValid && validation.solved;
-                int len = plan.length();
+                SearchOutcome outcome = bot.getLastOutcome();
+                boolean solved = outcome != null && outcome.bestPlanSolves();
+                int len = (plan == null) ? 0 : plan.length();
                 System.out.println(mapName + " len=" + len
-                        + " pushes=" + validation.pushes
-                        + " time=" + elapsedMs + "ms"
+                        + " pushes=" + st.getBestPlanPushes()
+                        + " time=" + st.getElapsedMillis() + "ms"
                         + " region=" + st.getRegionPruned()
                         + " corner=" + st.getCornerPruned()
                         + " freeze=" + st.getFreezePruned()

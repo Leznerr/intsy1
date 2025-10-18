@@ -128,28 +128,6 @@ public final class SearchStats {
         corridorSlides++;
     }
 
-    void accumulate(SearchStats other) {
-        if (other == null) {
-            return;
-        }
-        this.expandedStates += other.expandedStates;
-        if (other.openPeak > this.openPeak) {
-            this.openPeak = other.openPeak;
-        }
-        this.regionPruned += other.regionPruned;
-        this.cornerPruned += other.cornerPruned;
-        this.freezePruned += other.freezePruned;
-        this.wallLinePruned += other.wallLinePruned;
-        this.duplicatePruned += other.duplicatePruned;
-        this.corridorSlides += other.corridorSlides;
-        if (this.firstIncumbentNanos < 0L
-                || (other.firstIncumbentNanos >= 0L && other.firstIncumbentNanos < this.firstIncumbentNanos)) {
-            this.firstIncumbentNanos = other.firstIncumbentNanos;
-        }
-        this.timeLimitHit = this.timeLimitHit || other.timeLimitHit;
-        this.closedStates += other.closedStates;
-    }
-
     public long getExpandedStates() {
         return expandedStates;
     }
