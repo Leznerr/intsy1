@@ -42,6 +42,7 @@ public final class Deadlock {
                 Diagnostics.recordDeadlockCheckTime(System.nanoTime() - start);
             }
         }
+        return evaluateDeadlock(state, lockedGoal);
     }
 
     private boolean evaluateDeadlock(State state) {
@@ -449,21 +450,14 @@ public final class Deadlock {
     }
 
     public boolean regionHasGoalForMove(Coordinate[] boxes, int movedIdx, int destX, int destY) {
-        long start = Diagnostics.now();
-        try {
-            if (!inBounds(destX, destY)) {
-                return false;
-            }
-            if (mapData[destY][destX] == Constants.WALL) {
-                return false;
-            }
-            return RegionCache.getOrCompute(boxes, movedIdx, destX, destY,
-                    () -> computeRegionHasGoalForMove(boxes, movedIdx, destX, destY));
-        } finally {
-            if (Diagnostics.ENABLED) {
-                Diagnostics.recordDeadlockRegionTime(System.nanoTime() - start);
-            }
+        if (!inBounds(destX, destY)) {
+            return false;
         }
+        if (mapData[destY][destX] == Constants.WALL) {
+            return false;
+        }
+        return RegionCache.getOrCompute(boxes, movedIdx, destX, destY,
+                () -> computeRegionHasGoalForMove(boxes, movedIdx, destX, destY));
     }
 
     private boolean computeRegionHasGoalForMove(Coordinate[] boxes, int movedIdx, int destX, int destY) {
@@ -531,46 +525,39 @@ public final class Deadlock {
     }
 
     public boolean isWallLineFreeze(int x, int y, Coordinate[] boxes) {
-        long start = Diagnostics.now();
-        try {
-            if (!inBounds(x, y)) {
-                return false;
-            }
-            if (isGoal(x, y)) {
-                return false;
-            }
-            int movedIdx = findBoxIndex(boxes, x, y);
-            if (movedIdx < 0) {
-                return false;
-            }
-
-            boolean verticalAlignment = false;
-            if (isWallOrOutOfBounds(x - 1, y)) {
-                verticalAlignment |= isVerticalLineBlocked(x, y, boxes, movedIdx, -1);
-            }
-            if (!verticalAlignment && isWallOrOutOfBounds(x + 1, y)) {
-                verticalAlignment |= isVerticalLineBlocked(x, y, boxes, movedIdx, 1);
-            }
-            if (verticalAlignment && !regionHasGoalForMove(boxes, movedIdx, x, y)) {
-                return true;
-            }
-
-            boolean horizontalAlignment = false;
-            if (isWallOrOutOfBounds(x, y - 1)) {
-                horizontalAlignment |= isHorizontalLineBlocked(x, y, boxes, movedIdx, -1);
-            }
-            if (!horizontalAlignment && isWallOrOutOfBounds(x, y + 1)) {
-                horizontalAlignment |= isHorizontalLineBlocked(x, y, boxes, movedIdx, 1);
-            }
-            if (horizontalAlignment && !regionHasGoalForMove(boxes, movedIdx, x, y)) {
-                return true;
-            }
+        if (!inBounds(x, y)) {
             return false;
-        } finally {
-            if (Diagnostics.ENABLED) {
-                Diagnostics.recordDeadlockFreezeTime(System.nanoTime() - start);
-            }
         }
+        if (isGoal(x, y)) {
+            return false;
+        }
+        int movedIdx = findBoxIndex(boxes, x, y);
+        if (movedIdx < 0) {
+            return false;
+        }
+
+        boolean verticalAlignment = false;
+        if (isWallOrOutOfBounds(x - 1, y)) {
+            verticalAlignment |= isVerticalLineBlocked(x, y, boxes, movedIdx, -1);
+        }
+        if (!verticalAlignment && isWallOrOutOfBounds(x + 1, y)) {
+            verticalAlignment |= isVerticalLineBlocked(x, y, boxes, movedIdx, 1);
+        }
+        if (verticalAlignment && !regionHasGoalForMove(boxes, movedIdx, x, y)) {
+            return true;
+        }
+
+        boolean horizontalAlignment = false;
+        if (isWallOrOutOfBounds(x, y - 1)) {
+            horizontalAlignment |= isHorizontalLineBlocked(x, y, boxes, movedIdx, -1);
+        }
+        if (!horizontalAlignment && isWallOrOutOfBounds(x, y + 1)) {
+            horizontalAlignment |= isHorizontalLineBlocked(x, y, boxes, movedIdx, 1);
+        }
+        if (horizontalAlignment && !regionHasGoalForMove(boxes, movedIdx, x, y)) {
+            return true;
+        }
+        return false;
     }
 
     private boolean isVerticalLineBlocked(int x, int y, Coordinate[] boxes, int movedIdx, int wallDx) {
@@ -683,21 +670,14 @@ public final class Deadlock {
     }
 
     public boolean regionHasGoalIgnoringBoxes(int startX, int startY) {
-        long start = Diagnostics.now();
-        try {
-            if (!inBounds(startX, startY)) {
-                return false;
-            }
-            if (mapData[startY][startX] == Constants.WALL) {
-                return false;
-            }
-            int component = Components.compId[startY][startX];
-            return component >= 0 && Components.goalsInComp[component] > 0;
-        } finally {
-            if (Diagnostics.ENABLED) {
-                Diagnostics.recordDeadlockLooseTime(System.nanoTime() - start);
-            }
+        if (!inBounds(startX, startY)) {
+            return false;
         }
+        if (mapData[startY][startX] == Constants.WALL) {
+            return false;
+        }
+        int component = Components.compId[startY][startX];
+        return component >= 0 && Components.goalsInComp[component] > 0;
     }
 
     private boolean regionHasGoal(Coordinate startBox) {

@@ -1,6 +1,5 @@
 package solver;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -77,22 +76,6 @@ public final class State {
                 goalDistanceSquaredSum);
     }
 
-    public static State walk(State parent, Coordinate nextPlayer, char move) {
-        return new State(nextPlayer,
-                parent.boxes,
-                parent,
-                move,
-                false,
-                parent.depth + 1,
-                parent.pushes,
-                parent.heuristic,
-                parent.insertionId,
-                parent.hash,
-                new char[0],
-                -1,
-                parent.goalDistanceSquaredSum);
-    }
-
     public static State push(State parent,
                               Coordinate nextPlayer,
                               Coordinate[] updatedBoxes,
@@ -102,8 +85,8 @@ public final class State {
         Coordinate[] ordered = copyAndSort(updatedBoxes);
         long insertion = INSERTION_SEQUENCE.getAndIncrement();
         long hash = computeHash(nextPlayer, ordered);
-        Coordinate newLocation = findMovedCoordinate(parent.getBoxes(), ordered);
-        int movedIndex = findIndex(ordered, newLocation);
+        Coordinate movedCoordinate = findMovedCoordinate(parent.getBoxes(), ordered);
+        int movedIndex = findIndex(ordered, movedCoordinate);
         int additionalDepth = prePushWalk == null ? 0 : prePushWalk.length;
         long goalDistanceSquaredSum = computeGoalDistanceSquaredSum(ordered);
         return new State(nextPlayer,
@@ -255,32 +238,22 @@ public final class State {
     }
 
     public String reconstructPlan() {
-        if (depth == 0) {
-            return "";
+        StringBuilder builder = new StringBuilder(depth);
+        appendPlan(builder);
+        return builder.toString();
+    }
+
+    private void appendPlan(StringBuilder builder) {
+        if (parent != null) {
+            parent.appendPlan(builder);
         }
-        char[] sequence = new char[depth];
-        int index = 0;
-        ArrayList<State> chain = new ArrayList<>();
-        State cursor = this;
-        while (cursor != null) {
-            chain.add(cursor);
-            cursor = cursor.parent;
+        if (!lastMovePush) {
+            return;
         }
-        for (int i = chain.size() - 1; i >= 0; i--) {
-            State node = chain.get(i);
-            if (!node.lastMovePush) {
-                continue;
-            }
-            for (char move : node.prePushWalk) {
-                if (index < sequence.length) {
-                    sequence[index++] = move;
-                }
-            }
-            if (index < sequence.length) {
-                sequence[index++] = node.lastMove;
-            }
+        for (char c : prePushWalk) {
+            builder.append(c);
         }
-        return new String(sequence, 0, index);
+        builder.append(lastMove);
     }
 
     public int getMovedBoxIndex() {
