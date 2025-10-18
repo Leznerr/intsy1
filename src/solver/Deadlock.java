@@ -113,6 +113,10 @@ public final class Deadlock {
         return hasBox(x, y) && !isGoal(x, y);
     }
 
+    boolean compHasEnoughGoalsForMove(State state, int movedIdx, int destX, int destY) {
+        return compHasEnoughGoalsForMove(state.getBoxes(), movedIdx, destX, destY);
+    }
+
     boolean compHasEnoughGoalsForMove(Coordinate[] boxes, int movedIdx, int destX, int destY) {
         if (!inBounds(destX, destY) || mapData[destY][destX] == Constants.WALL) {
             return false;
@@ -138,6 +142,10 @@ public final class Deadlock {
             }
         }
         return count <= Components.goalsInComp[comp];
+    }
+
+    boolean roomHasEnoughGoalsForMove(State state, int movedIdx, int destX, int destY) {
+        return roomHasEnoughGoalsForMove(state.getBoxes(), movedIdx, destX, destY);
     }
 
     boolean roomHasEnoughGoalsForMove(Coordinate[] boxes, int movedIdx, int destX, int destY) {
