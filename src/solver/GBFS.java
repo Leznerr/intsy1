@@ -37,11 +37,7 @@ public final class GBFS {
     private State deepestFrontierCandidate;
 
     private final Comparator<State> stateComparator = (a, b) -> {
-        int cmp = Integer.compare(a.getFCost(), b.getFCost());
-        if (cmp != 0) {
-            return cmp;
-        }
-        cmp = Integer.compare(a.getHeuristic(), b.getHeuristic());
+        int cmp = Integer.compare(a.getHeuristic(), b.getHeuristic());
         if (cmp != 0) {
             return cmp;
         }
@@ -215,11 +211,10 @@ public final class GBFS {
                 continue;
             }
 
-            if (!deadlockDetector.regionHasGoalForMove(parentBoxes, boxIdx, destX, destY)) {
-                if (!deadlockDetector.regionHasGoalIgnoringBoxes(destX, destY)) {
-                    stats.recordRegionPrePruned();
-                    continue;
-                }
+            if (!deadlockDetector.regionHasGoalForMove(parentBoxes, boxIdx, destX, destY)
+                    && !deadlockDetector.regionHasGoalIgnoringBoxes(destX, destY)) {
+                stats.recordRegionPruned();
+                continue;
             }
 
             char[] prePushWalk = reconstructPath(startX, startY, px, py);
@@ -242,18 +237,17 @@ public final class GBFS {
             }
             Coordinate moved = finalBoxes[movedIdx];
 
-            if (!deadlockDetector.regionHasGoalForMove(finalBoxes, movedIdx, moved.x, moved.y)) {
-                if (!deadlockDetector.regionHasGoalIgnoringBoxes(moved.x, moved.y)) {
-                    stats.recordRegionPostPruned();
-                    continue;
-                }
+            if (!deadlockDetector.regionHasGoalForMove(finalBoxes, movedIdx, moved.x, moved.y)
+                    && !deadlockDetector.regionHasGoalIgnoringBoxes(moved.x, moved.y)) {
+                stats.recordRegionPruned();
+                continue;
             }
             if (!deadlockDetector.roomHasEnoughGoalsForMove(finalBoxes, movedIdx, moved.x, moved.y)) {
-                stats.recordRegionPostPruned();
+                stats.recordRegionPruned();
                 continue;
             }
             if (!deadlockDetector.compHasEnoughGoalsForMove(finalBoxes, movedIdx, moved.x, moved.y)) {
-                stats.recordRegionPostPruned();
+                stats.recordRegionPruned();
                 continue;
             }
             if (deadlockDetector.isCornerNoGoal(moved.x, moved.y)) {
@@ -321,11 +315,10 @@ public final class GBFS {
             if (mapData[nextY][nextX] == Constants.WALL) break;
             if (current.hasBoxAt(nextX, nextY)) break;
 
-            if (!deadlockDetector.regionHasGoalForMove(current.getBoxes(), movedIdx, nextX, nextY)) {
-                if (!deadlockDetector.regionHasGoalIgnoringBoxes(nextX, nextY)) {
-                    stats.recordRegionPostPruned();
-                    break;
-                }
+            if (!deadlockDetector.regionHasGoalForMove(current.getBoxes(), movedIdx, nextX, nextY)
+                    && !deadlockDetector.regionHasGoalIgnoringBoxes(nextX, nextY)) {
+                stats.recordRegionPruned();
+                break;
             }
 
             Coordinate[] nextBoxes = copyBoxes(current.getBoxes());
@@ -344,9 +337,9 @@ public final class GBFS {
 
             movedIdx = current.getMovedBoxIndex();
 
-            if (deadlockDetector.isDeadlock(current)) break;
-
             stats.recordCorridorSlide();
+
+            if (deadlockDetector.isDeadlock(current)) break;
         }
         return current;
     }
