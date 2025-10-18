@@ -179,6 +179,32 @@ public final class Deadlock {
                 || isVerticalFreeze(x, y, boxes, 1);
     }
 
+    boolean isOneSidedFreezeLine(int x, int y, Coordinate[] boxes) {
+        if (!inBounds(x, y)) {
+            return false;
+        }
+        if (isGoal(x, y)) {
+            return false;
+        }
+        if (isWallOrOutOfBounds(x, y - 1)
+                && checkOneSidedHorizontalFreezeLine(x, y, boxes, -1)) {
+            return true;
+        }
+        if (isWallOrOutOfBounds(x, y + 1)
+                && checkOneSidedHorizontalFreezeLine(x, y, boxes, 1)) {
+            return true;
+        }
+        if (isWallOrOutOfBounds(x - 1, y)
+                && checkOneSidedVerticalFreezeLine(x, y, boxes, -1)) {
+            return true;
+        }
+        if (isWallOrOutOfBounds(x + 1, y)
+                && checkOneSidedVerticalFreezeLine(x, y, boxes, 1)) {
+            return true;
+        }
+        return false;
+    }
+
     private boolean isHorizontalFreeze(int x, int y, Coordinate[] boxes, int wallDy) {
         if (!isWallOrOutOfBounds(x, y + wallDy)) {
             return false;
@@ -220,6 +246,52 @@ public final class Deadlock {
                     return false;
                 }
                 cy += sy;
+            }
+        }
+        return true;
+    }
+
+    private boolean checkOneSidedHorizontalFreezeLine(int x, int y, Coordinate[] boxes, int wallDy) {
+        int oppositeY = y - wallDy;
+        if (!isBlockedByWallOrBox(x, oppositeY, boxes, -1)) {
+            return false;
+        }
+        for (int stepX = -1; stepX <= 1; stepX += 2) {
+            int cx = x + stepX;
+            while (inBounds(cx, y) && mapData[y][cx] != Constants.WALL) {
+                if (!isWallOrOutOfBounds(cx, y + wallDy)) {
+                    break;
+                }
+                if (isGoal(cx, y)) {
+                    return false;
+                }
+                if (!isBlockedByWallOrBox(cx, oppositeY, boxes, -1)) {
+                    return false;
+                }
+                cx += stepX;
+            }
+        }
+        return true;
+    }
+
+    private boolean checkOneSidedVerticalFreezeLine(int x, int y, Coordinate[] boxes, int wallDx) {
+        int oppositeX = x - wallDx;
+        if (!isBlockedByWallOrBox(oppositeX, y, boxes, -1)) {
+            return false;
+        }
+        for (int stepY = -1; stepY <= 1; stepY += 2) {
+            int cy = y + stepY;
+            while (inBounds(x, cy) && mapData[cy][x] != Constants.WALL) {
+                if (!isWallOrOutOfBounds(x + wallDx, cy)) {
+                    break;
+                }
+                if (isGoal(x, cy)) {
+                    return false;
+                }
+                if (!isBlockedByWallOrBox(oppositeX, cy, boxes, -1)) {
+                    return false;
+                }
+                cy += stepY;
             }
         }
         return true;

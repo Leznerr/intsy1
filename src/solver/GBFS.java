@@ -385,6 +385,11 @@ public final class GBFS {
             int movedIdx = finalState.getMovedBoxIndex();
             if (movedIdx >= 0) {
                 Coordinate movedBox = finalState.getBoxes()[movedIdx];
+                if (deadlockDetector.isOneSidedFreezeLine(movedBox.x, movedBox.y, finalState.getBoxes())) {
+                    stats.recordDeadlockPruned();
+                    Diagnostics.recordPostPrunedDeadlock();
+                    continue;
+                }
                 if (deadlockDetector.quickWallLineFreeze(movedBox.x, movedBox.y, finalState.getBoxes())) {
                     stats.recordDeadlockPruned();
                     Diagnostics.recordPostPrunedDeadlock();
