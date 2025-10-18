@@ -14,17 +14,20 @@ public final class ReplayValidator {
         public final int lastValidIndex;
         public final char[][] finalItems;
         public final int boxesOnGoals;
+        public final int pushes;
 
         ValidationResult(boolean fullyValid,
                          boolean solved,
                          int lastValidIndex,
                          char[][] finalItems,
-                         int boxesOnGoals) {
+                         int boxesOnGoals,
+                         int pushes) {
             this.fullyValid = fullyValid;
             this.solved = solved;
             this.lastValidIndex = lastValidIndex;
             this.finalItems = finalItems;
             this.boxesOnGoals = boxesOnGoals;
+            this.pushes = pushes;
         }
     }
 
@@ -76,6 +79,7 @@ public final class ReplayValidator {
 
         int lastValid = -1;
         boolean valid = true;
+        int pushes = 0;
         for (int i = 0; i < moves.size(); i++) {
             char move = moves.get(i);
             int dirIndex = directionIndex(move);
@@ -105,6 +109,7 @@ public final class ReplayValidator {
                 boxSet.remove(neighborIndex);
                 boxSet.add(destIndex);
                 player = new Coordinate(nx, ny);
+                pushes++;
             } else {
                 player = new Coordinate(nx, ny);
             }
@@ -144,7 +149,7 @@ public final class ReplayValidator {
             }
         }
 
-        return new ValidationResult(valid, solved, lastValid, finalItems, boxesOnGoals);
+        return new ValidationResult(valid, solved, lastValid, finalItems, boxesOnGoals, pushes);
     }
 
     private static int index(int x, int y, int width) {

@@ -7,7 +7,6 @@ import java.util.Map;
 import java.util.PriorityQueue;
 
 public final class GBFS {
-    private static final long TIME_LIMIT_NANOS = Constants.TIME_BUDGET_MS * 1_000_000L;
     private static final char[] EMPTY_PATH = new char[0];
 
     private final char[][] mapData;
@@ -35,6 +34,7 @@ public final class GBFS {
 
     private State bestFrontierCandidate;
     private State deepestFrontierCandidate;
+    private final long timeBudgetNanos;
 
     private final Comparator<State> stateComparator = (a, b) -> {
         int cmp = Integer.compare(a.getHeuristic(), b.getHeuristic());
@@ -57,7 +57,7 @@ public final class GBFS {
         return Long.compare(a.getInsertionId(), b.getInsertionId());
     };
 
-    public GBFS(char[][] mapData, Coordinate[] goalCoordinates) {
+    public GBFS(char[][] mapData, Coordinate[] goalCoordinates, long timeBudgetMillis) {
         this.mapData = mapData;
         this.goalCoordinates = goalCoordinates;
         this.deadlockDetector = new Deadlock(mapData, goalCoordinates);
@@ -71,6 +71,8 @@ public final class GBFS {
         this.boxIds = new int[rows][cols];
         this.queueX = new int[Math.max(1, rows * cols)];
         this.queueY = new int[Math.max(1, rows * cols)];
+        long millis = Math.max(1L, timeBudgetMillis);
+        this.timeBudgetNanos = millis * 1_000_000L;
     }
 
     public SearchOutcome search(State initial) {
@@ -78,8 +80,8 @@ public final class GBFS {
         Map<Long, Long> bestCosts = new HashMap<>();
 
         long startTime = System.nanoTime();
-        long deadline = startTime + TIME_LIMIT_NANOS;
-        stats.reset(TIME_LIMIT_NANOS);
+        long deadline = startTime + timeBudgetNanos;
+        stats.reset(timeBudgetNanos);
         stats.markStart(startTime);
         Diagnostics.markSearchStart();
 
