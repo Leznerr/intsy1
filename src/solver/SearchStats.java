@@ -3,8 +3,7 @@ package solver;
 public final class SearchStats {
     private long expandedStates;
     private int openPeak;
-    private long regionPrePruned;
-    private long regionPostPruned;
+    private long regionPruned;
     private long cornerPruned;
     private long freezePruned;
     private long wallLinePruned;
@@ -26,8 +25,7 @@ public final class SearchStats {
     private SearchStats(SearchStats other) {
         this.expandedStates = other.expandedStates;
         this.openPeak = other.openPeak;
-        this.regionPrePruned = other.regionPrePruned;
-        this.regionPostPruned = other.regionPostPruned;
+        this.regionPruned = other.regionPruned;
         this.cornerPruned = other.cornerPruned;
         this.freezePruned = other.freezePruned;
         this.wallLinePruned = other.wallLinePruned;
@@ -54,8 +52,7 @@ public final class SearchStats {
     void reset(long limitNanos) {
         this.expandedStates = 0L;
         this.openPeak = 0;
-        this.regionPrePruned = 0L;
-        this.regionPostPruned = 0L;
+        this.regionPruned = 0L;
         this.cornerPruned = 0L;
         this.freezePruned = 0L;
         this.wallLinePruned = 0L;
@@ -100,11 +97,15 @@ public final class SearchStats {
     }
 
     void recordRegionPrePruned() {
-        regionPrePruned++;
+        regionPruned++;
     }
 
     void recordRegionPostPruned() {
-        regionPostPruned++;
+        regionPruned++;
+    }
+
+    void recordRegionPruned() {
+        regionPruned++;
     }
 
     void recordCornerPruned() {
@@ -135,12 +136,8 @@ public final class SearchStats {
         return openPeak;
     }
 
-    public long getRegionPrePruned() {
-        return regionPrePruned;
-    }
-
-    public long getRegionPostPruned() {
-        return regionPostPruned;
+    public long getRegionPruned() {
+        return regionPruned;
     }
 
     public long getCornerPruned() {
@@ -202,14 +199,12 @@ public final class SearchStats {
         if (incumbent >= 0) {
             sb.append(" first_incumbent_ms=").append(incumbent);
         }
-        sb.append(" region_pruned=").append(regionPrePruned);
-        sb.append(" post_region_pruned=").append(regionPostPruned);
+        sb.append(" region_pruned=").append(regionPruned);
         sb.append(" corner_pruned=").append(cornerPruned);
         sb.append(" freeze_pruned=").append(freezePruned);
         sb.append(" wall_line_pruned=").append(wallLinePruned);
         sb.append(" duplicates=").append(duplicatePruned);
         sb.append(" corridor_slides=").append(corridorSlides);
-        sb.append(" closed=").append(closedStates);
         sb.append(" limit_hit=").append(timeLimitHit);
         return sb.toString();
     }

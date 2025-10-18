@@ -33,16 +33,8 @@ public final class Deadlock {
     }
 
     public boolean isDeadlock(State state) {
-        long start = Diagnostics.now();
-        try {
-            markBoxes(state);
-            return DeadlockCache.getOrCompute(state.getBoxes(), () -> evaluateDeadlock(state));
-        } finally {
-            if (Diagnostics.ENABLED) {
-                Diagnostics.recordDeadlockCheckTime(System.nanoTime() - start);
-            }
-        }
-        return evaluateDeadlock(state, lockedGoal);
+        markBoxes(state);
+        return DeadlockCache.getOrCompute(state.getBoxes(), () -> evaluateDeadlock(state));
     }
 
     private boolean evaluateDeadlock(State state) {
