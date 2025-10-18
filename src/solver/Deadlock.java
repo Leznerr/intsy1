@@ -140,19 +140,89 @@ public final class Deadlock {
         return count <= Components.goalsInComp[comp];
     }
 
-    boolean roomHasEnoughGoalsForMove(Coordinate[] boxes, int movedIdx, int destX, int destY){
-        if (!inBounds(destX,destY) || mapData[destY][destX]==Constants.WALL) return false;
+    boolean roomHasEnoughGoalsForMove(Coordinate[] boxes, int movedIdx, int destX, int destY) {
+        if (!inBounds(destX, destY) || mapData[destY][destX] == Constants.WALL) {
+            return false;
+        }
         int r = Rooms.roomId[destY][destX];
-        if (r < 0) return false;
+        if (r < 0) {
+            return false;
+        }
+        Coordinate current = boxes[movedIdx];
+        if (current != null) {
+            int currentRoom = Rooms.roomId[current.y][current.x];
+            if (currentRoom == r) {
+                return true;
+            }
+        }
         int quota = Rooms.goalsInRoom[r];
-        if (quota <= 0) return true;
+        if (quota == 0) {
+            quota = 1;
+        }
         int count = 1;
-        for (int i=0;i<boxes.length;i++){
-            if (i==movedIdx) continue;
+        for (int i = 0; i < boxes.length; i++) {
+            if (i == movedIdx) {
+                continue;
+            }
             Coordinate b = boxes[i];
-            if (b!=null && Rooms.roomId[b.y][b.x]==r) count++;
+            if (b != null && Rooms.roomId[b.y][b.x] == r) {
+                count++;
+            }
         }
         return count <= quota;
+    }
+
+    boolean quickWallLineFreeze(int x, int y, Coordinate[] boxes) {
+        return isHorizontalFreeze(x, y, boxes, -1)
+                || isHorizontalFreeze(x, y, boxes, 1)
+                || isVerticalFreeze(x, y, boxes, -1)
+                || isVerticalFreeze(x, y, boxes, 1);
+    }
+
+    private boolean isHorizontalFreeze(int x, int y, Coordinate[] boxes, int wallDy) {
+        if (!isWallOrOutOfBounds(x, y + wallDy)) {
+            return false;
+        }
+        int oppY = y - wallDy;
+        if (!isBlockedByWallOrBox(x, oppY, boxes, -1)) {
+            return false;
+        }
+        for (int sx = -1; sx <= 1; sx += 2) {
+            int cx = x + sx;
+            while (inBounds(cx, y) && mapData[y][cx] != Constants.WALL) {
+                if (!isWallOrOutOfBounds(cx, y + wallDy)) {
+                    return false;
+                }
+                if (!isBlockedByWallOrBox(cx, oppY, boxes, -1)) {
+                    return false;
+                }
+                cx += sx;
+            }
+        }
+        return true;
+    }
+
+    private boolean isVerticalFreeze(int x, int y, Coordinate[] boxes, int wallDx) {
+        if (!isWallOrOutOfBounds(x + wallDx, y)) {
+            return false;
+        }
+        int oppX = x - wallDx;
+        if (!isBlockedByWallOrBox(oppX, y, boxes, -1)) {
+            return false;
+        }
+        for (int sy = -1; sy <= 1; sy += 2) {
+            int cy = y + sy;
+            while (inBounds(x, cy) && mapData[cy][x] != Constants.WALL) {
+                if (!isWallOrOutOfBounds(x + wallDx, cy)) {
+                    return false;
+                }
+                if (!isBlockedByWallOrBox(oppX, cy, boxes, -1)) {
+                    return false;
+                }
+                cy += sy;
+            }
+        }
+        return true;
     }
 
     private boolean isWallOrOutOfBounds(int x, int y) {

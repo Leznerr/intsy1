@@ -341,8 +341,23 @@ public final class GBFS {
             char[] prePushWalk = reconstructPath(startX, startY, px, py);
             Coordinate[] updatedBoxes = state.getBoxes().clone();
             updatedBoxes[boxIdx] = new Coordinate(destX, destY);
+            Coordinate[] candSorted = updatedBoxes.clone();
+            Arrays.sort(candSorted);
+            int candLB = Heuristic.assignmentLBForBoxes(candSorted);
+            if (candLB > parentLB) {
+                stats.recordRegionPrePruned();
+                Diagnostics.recordPrePrunedNonWorsen();
+                Diagnostics.recordLBWorsePruned();
+                continue;
+            }
             Coordinate nextPlayer = new Coordinate(boxX, boxY);
             boolean movingFromGoal = (mapData[boxY][boxX] == Constants.GOAL);
+            if (movingFromGoal && candLB >= parentLB - 1) {
+                stats.recordDeadlockPruned();
+                Diagnostics.recordPostPrunedDeadlock();
+                Diagnostics.recordStickyGoalBlocked();
+                continue;
+            }
             stats.recordPushCandidate();
             if (deadlockDetector.isCornerNoGoal(destX, destY)
                     || deadlockDetector.quickFrozenSquare(destX, destY, updatedBoxes)) {
@@ -352,16 +367,16 @@ public final class GBFS {
             }
             State pushState = State.push(state, nextPlayer, updatedBoxes, Constants.MOVES[dir], state.getHeuristic(), prePushWalk);
             State finalState = slideAlongCorridor(pushState, dir);
-            Coordinate[] candSorted = finalState.getBoxes().clone();
-            Arrays.sort(candSorted);
-            int candLB = Heuristic.assignmentLBForBoxes(candSorted);
-            if (movingFromGoal && candLB >= parentLB - 1) {
+            Coordinate[] finalSorted = finalState.getBoxes().clone();
+            Arrays.sort(finalSorted);
+            int finalLB = Heuristic.assignmentLBForBoxes(finalSorted);
+            if (movingFromGoal && finalLB >= parentLB - 1) {
                 stats.recordDeadlockPruned();
                 Diagnostics.recordPostPrunedDeadlock();
                 Diagnostics.recordStickyGoalBlocked();
                 continue;
             }
-            if (candLB > parentLB) {
+            if (finalLB > parentLB) {
                 stats.recordRegionPrePruned();
                 Diagnostics.recordPrePrunedNonWorsen();
                 Diagnostics.recordLBWorsePruned();
@@ -370,6 +385,11 @@ public final class GBFS {
             int movedIdx = finalState.getMovedBoxIndex();
             if (movedIdx >= 0) {
                 Coordinate movedBox = finalState.getBoxes()[movedIdx];
+                if (deadlockDetector.quickWallLineFreeze(movedBox.x, movedBox.y, finalState.getBoxes())) {
+                    stats.recordDeadlockPruned();
+                    Diagnostics.recordPostPrunedDeadlock();
+                    continue;
+                }
                 if (!deadlockDetector.compHasEnoughGoalsForMove(finalState.getBoxes(), movedIdx, movedBox.x, movedBox.y)) {
                     stats.recordRegionPrePruned();
                     Diagnostics.recordPrePrunedRegionStrictFast();
@@ -479,19 +499,15 @@ public final class GBFS {
 
     private boolean isCorridorCell(int x, int y, int dir) {
         if (dir == Constants.UP || dir == Constants.DOWN) {
-            boolean wallsSide = isWallOrOutOfBounds(x - 1, y) && isWallOrOutOfBounds(x + 1, y);
-            int ny = y + (dir == Constants.UP ? -1 : 1);
-            boolean doorway = inBounds(x, y) && inBounds(x, ny)
-                    && Rooms.roomId[y][x] != -1 && Rooms.roomId[ny][x] != -1
-                    && Rooms.roomId[y][x] != Rooms.roomId[ny][x];
-            return wallsSide || doorway;
+            boolean walls = isWallOrOutOfBounds(x - 1, y) && isWallOrOutOfBounds(x + 1, y);
+            boolean doorway = Rooms.roomId[y][x] != -1 && (
+                    isWallOrOutOfBounds(x - 1, y) && isWallOrOutOfBounds(x + 1, y));
+            return walls || doorway;
         } else {
-            boolean wallsSide = isWallOrOutOfBounds(x, y - 1) && isWallOrOutOfBounds(x, y + 1);
-            int nx = x + (dir == Constants.LEFT ? -1 : 1);
-            boolean doorway = inBounds(x, y) && inBounds(nx, y)
-                    && Rooms.roomId[y][x] != -1 && Rooms.roomId[y][nx] != -1
-                    && Rooms.roomId[y][x] != Rooms.roomId[y][nx];
-            return wallsSide || doorway;
+            boolean walls = isWallOrOutOfBounds(x, y - 1) && isWallOrOutOfBounds(x, y + 1);
+            boolean doorway = Rooms.roomId[y][x] != -1 && (
+                    isWallOrOutOfBounds(x, y - 1) && isWallOrOutOfBounds(x, y + 1));
+            return walls || doorway;
         }
     }
 
