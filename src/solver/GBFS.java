@@ -57,6 +57,12 @@ public final class GBFS {
             Diagnostics.recordComparatorDecision("depth");
             return cmp;
         }
+        long distSumA = a.getGoalDistanceSquaredSum();
+        long distSumB = b.getGoalDistanceSquaredSum();
+        if (distSumA != distSumB) {
+            Diagnostics.recordComparatorDecision("goal_distance");
+            return Long.compare(distSumA, distSumB);
+        }
         cmp = Character.compare(a.getLastMove(), b.getLastMove());
         if (cmp != 0) {
             return cmp;
