@@ -72,7 +72,6 @@ public final class Diagnostics {
     private static long comparatorPushDecisions = 0L;
     private static long comparatorHeuristicDecisions = 0L;
     private static long comparatorProgressDecisions = 0L;
-    private static long comparatorGoalDistanceDecisions = 0L;
     private static long comparatorInsertionDecisions = 0L;
 
     private static final int ASSIGNMENT_SAMPLE_LIMIT = 10_000;
@@ -147,7 +146,6 @@ public final class Diagnostics {
         comparatorPushDecisions = 0L;
         comparatorHeuristicDecisions = 0L;
         comparatorProgressDecisions = 0L;
-        comparatorGoalDistanceDecisions = 0L;
         comparatorInsertionDecisions = 0L;
 
         assignmentValues.clear();
@@ -242,9 +240,6 @@ public final class Diagnostics {
                 break;
             case "progress":
                 comparatorProgressDecisions++;
-                break;
-            case "goal_distance":
-                comparatorGoalDistanceDecisions++;
                 break;
             case "insertion":
                 comparatorInsertionDecisions++;
@@ -578,7 +573,6 @@ public final class Diagnostics {
         stats.put("pushes", comparatorPushDecisions);
         stats.put("depth", comparatorDepthDecisions);
         stats.put("progress", comparatorProgressDecisions);
-        stats.put("goal_distance", comparatorGoalDistanceDecisions);
         stats.put("insertion", comparatorInsertionDecisions);
         return stats;
     }
