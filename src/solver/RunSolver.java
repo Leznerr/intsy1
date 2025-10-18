@@ -86,14 +86,10 @@ public final class RunSolver {
                 System.out.println(mapName + " len=" + len
                         + " pushes=" + validation.pushes
                         + " time=" + elapsedMs + "ms"
-                        + " expanded=" + st.getExpandedStates()
-                        + " open_peak=" + st.getOpenPeak()
-                        + " first_ms=" + st.getFirstIncumbentMillis()
                         + " region=" + st.getRegionPruned()
                         + " corner=" + st.getCornerPruned()
                         + " freeze=" + st.getFreezePruned()
                         + " wallLine=" + st.getWallLinePruned()
-                        + " corridor=" + st.getCorridorSlides()
                         + " dup=" + st.getDuplicatePruned());
 
                 if (Diagnostics.ENABLED) {

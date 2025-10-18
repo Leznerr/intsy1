@@ -441,12 +441,6 @@ public final class Heuristic {
             if (deadlockHelper.isWallLineFreeze(box.x, box.y, boxes)) {
                 return true;
             }
-            if (deadlockHelper.isCorridorTrap(box)) {
-                return true;
-            }
-            if (deadlockHelper.isImmovable(box.x, box.y, boxes)) {
-                return true;
-            }
             if (!deadlockHelper.regionHasGoalForMove(boxes, i, box.x, box.y)) {
                 if (!deadlockHelper.regionHasGoalIgnoringBoxes(box.x, box.y)) {
                     return true;
