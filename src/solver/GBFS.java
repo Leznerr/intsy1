@@ -30,9 +30,6 @@ public final class GBFS {
     private State bestFrontierCandidate;
     private State deepestFrontierCandidate;
     private static final char[] EMPTY_PATH = new char[0];
-    private boolean goalLockActive;
-    private boolean goalLockAttempted;
-    private Coordinate lockedGoalCoordinate;
 
     private final Comparator<State> stateComparator = (a, b) -> {
         int cmp = Integer.compare(a.getFCost(), b.getFCost());
@@ -96,10 +93,6 @@ public final class GBFS {
 
         long startTime = System.nanoTime();
         long deadline = startTime + TIME_LIMIT_NANOS;
-        long lockTriggerTime = startTime + (TIME_LIMIT_NANOS / 2);
-        goalLockActive = false;
-        goalLockAttempted = false;
-        lockedGoalCoordinate = null;
         stats.reset(TIME_LIMIT_NANOS);
         stats.markStart(startTime);
         Diagnostics.markSearchStart();
@@ -118,13 +111,10 @@ public final class GBFS {
             if (now > deadline) {
                 break;
             }
-            State current = open.poll();
-            if (!goalLockAttempted && now >= lockTriggerTime && bestGoal == null) {
-                attemptGoalLock(current);
-            }
             if (Diagnostics.shouldSample(Diagnostics.getExpandedStates())) {
                 Diagnostics.recordQueueSnapshot(open, stateComparator);
             }
+            State current = open.poll();
             stats.incrementExpanded();
             Diagnostics.incrementExpanded(current);
             Diagnostics.checkFirstPush(current, open);
@@ -306,9 +296,6 @@ public final class GBFS {
             if (!hasBoxAt(boxX, boxY)) {
                 continue;
             }
-            if (goalLockActive && isLockedGoal(boxX, boxY)) {
-                continue;
-            }
             int boxIdx = boxIds[boxY][boxX];
             int destX = boxX + Constants.DIRECTION_X[dir];
             int destY = boxY + Constants.DIRECTION_Y[dir];
@@ -448,7 +435,7 @@ public final class GBFS {
                 Diagnostics.recordDuplicateLocal();
                 continue;
             }
-            if (deadlockDetector.isDeadlock(finalState, goalLockActive ? lockedGoalCoordinate : null)) {
+            if (deadlockDetector.isDeadlock(finalState)) {
                 stats.recordDeadlockPruned();
                 Diagnostics.recordPostPrunedDeadlock();
                 continue;
@@ -511,7 +498,7 @@ public final class GBFS {
             Coordinate[] nextBoxes = current.getBoxes().clone();
             nextBoxes[movedIdx] = new Coordinate(nextX, nextY);
             State nextState = State.push(current, nextPlayer, nextBoxes, Constants.MOVES[dir], current.getHeuristic(), EMPTY_PATH);
-            if (deadlockDetector.isDeadlock(nextState, goalLockActive ? lockedGoalCoordinate : null)) {
+            if (deadlockDetector.isDeadlock(nextState)) {
                 break;
             }
             macroSaved++;
@@ -533,45 +520,6 @@ public final class GBFS {
                     isWallOrOutOfBounds(x, y - 1) && isWallOrOutOfBounds(x, y + 1));
             return walls || doorway;
         }
-    }
-
-    private void attemptGoalLock(State referenceState) {
-        goalLockAttempted = true;
-        if (referenceState == null) {
-            return;
-        }
-        Coordinate target = findClosestUnmatchedGoal(referenceState);
-        if (target != null) {
-            goalLockActive = true;
-            lockedGoalCoordinate = target;
-        }
-    }
-
-    private Coordinate findClosestUnmatchedGoal(State referenceState) {
-        Coordinate[] boxes = referenceState.getBoxes();
-        Coordinate bestGoal = null;
-        int bestDistance = Integer.MAX_VALUE;
-        for (Coordinate goal : goalCoordinates) {
-            if (referenceState.hasBoxAt(goal.x, goal.y)) {
-                continue;
-            }
-            int goalBest = Integer.MAX_VALUE;
-            for (Coordinate box : boxes) {
-                int distance = Math.abs(goal.x - box.x) + Math.abs(goal.y - box.y);
-                if (distance < goalBest) {
-                    goalBest = distance;
-                }
-            }
-            if (goalBest < bestDistance) {
-                bestDistance = goalBest;
-                bestGoal = goal;
-            }
-        }
-        return bestGoal;
-    }
-
-    private boolean isLockedGoal(int x, int y) {
-        return lockedGoalCoordinate != null && x == lockedGoalCoordinate.x && y == lockedGoalCoordinate.y;
     }
 
     private char[] reconstructPath(int startX, int startY, int targetX, int targetY) {
