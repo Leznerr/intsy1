@@ -19,7 +19,7 @@ public final class Constants {
     public static final int LEFT = 2;
     public static final int RIGHT = 3;
 
-    public static final long TIME_BUDGET_MS = 60_000L;
+    public static final long TIME_BUDGET_MS = 14_000L;
     public static final boolean DEBUG_METRICS = false;
     public static final boolean DEBUG_LOG = false;
 }
