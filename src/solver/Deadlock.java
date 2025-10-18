@@ -1,8 +1,5 @@
 package solver;
 
-import java.util.ArrayDeque;
-import java.util.Queue;
-
 public final class Deadlock {
     private final char[][] mapData;
     private final boolean[][] goal;
@@ -14,6 +11,8 @@ public final class Deadlock {
     private int regionToken = 1;
     private final int[][] occupiedStamp;
     private int occupiedToken = 1;
+    private final int[] floodQueueX;
+    private final int[] floodQueueY;
 
     public Deadlock(char[][] mapData, Coordinate[] goalCoordinates) {
         this.mapData = mapData;
@@ -30,6 +29,9 @@ public final class Deadlock {
         this.occupiedStamp = new int[rows][cols];
         DeadlockCache.clear();
         RegionCache.clear();
+        int capacity = Math.max(1, rows * cols);
+        this.floodQueueX = new int[capacity];
+        this.floodQueueY = new int[capacity];
     }
 
     public boolean isDeadlock(State state) {
@@ -398,7 +400,7 @@ public final class Deadlock {
         return filled == 4 && offGoalBoxes > 0;
     }
 
-    private boolean isCorridorTrap(Coordinate box) {
+    boolean isCorridorTrap(Coordinate box) {
         boolean verticalWalls = isWallOrOutOfBounds(box.x - 1, box.y)
                 && isWallOrOutOfBounds(box.x + 1, box.y);
         boolean horizontalWalls = isWallOrOutOfBounds(box.x, box.y - 1)
@@ -412,7 +414,7 @@ public final class Deadlock {
         return true;
     }
 
-    private boolean isImmovable(int x, int y, Coordinate[] boxes) {
+    boolean isImmovable(int x, int y, Coordinate[] boxes) {
         if (isGoal(x, y)) {
             return false;
         }
@@ -456,7 +458,8 @@ public final class Deadlock {
         advanceRegionToken();
         advanceOccupiedToken();
         int ignoringToken = regionToken;
-        Queue<int[]> queue = new ArrayDeque<>();
+        int head = 0;
+        int tail = 0;
         for (int i = 0; i < boxes.length; i++) {
             if (i == movedIdx) {
                 continue;
@@ -467,12 +470,14 @@ public final class Deadlock {
             }
         }
         regionStamp[destY][destX] = ignoringToken;
-        queue.add(new int[] {destX, destY});
+        floodQueueX[tail] = destX;
+        floodQueueY[tail] = destY;
+        tail++;
         int goalsInRegion = 0;
-        while (!queue.isEmpty()) {
-            int[] cell = queue.remove();
-            int cx = cell[0];
-            int cy = cell[1];
+        while (head < tail) {
+            int cx = floodQueueX[head];
+            int cy = floodQueueY[head];
+            head++;
             if (goal[cy][cx]) {
                 goalsInRegion++;
             }
@@ -492,7 +497,9 @@ public final class Deadlock {
                     continue;
                 }
                 regionStamp[ny][nx] = ignoringToken;
-                queue.add(new int[] {nx, ny});
+                floodQueueX[tail] = nx;
+                floodQueueY[tail] = ny;
+                tail++;
             }
         }
         if (goalsInRegion == 0) {
@@ -674,16 +681,19 @@ public final class Deadlock {
 
     private boolean regionHasGoal(Coordinate startBox) {
         advanceRegionToken();
-        Queue<int[]> queue = new ArrayDeque<>();
         if (!inBounds(startBox.x, startBox.y)) {
             return false;
         }
         regionStamp[startBox.y][startBox.x] = regionToken;
-        queue.add(new int[] {startBox.x, startBox.y});
-        while (!queue.isEmpty()) {
-            int[] cell = queue.remove();
-            int cx = cell[0];
-            int cy = cell[1];
+        int head = 0;
+        int tail = 0;
+        floodQueueX[tail] = startBox.x;
+        floodQueueY[tail] = startBox.y;
+        tail++;
+        while (head < tail) {
+            int cx = floodQueueX[head];
+            int cy = floodQueueY[head];
+            head++;
             if (goal[cy][cx]) {
                 return true;
             }
@@ -703,7 +713,9 @@ public final class Deadlock {
                     continue;
                 }
                 regionStamp[ny][nx] = regionToken;
-                queue.add(new int[] {nx, ny});
+                floodQueueX[tail] = nx;
+                floodQueueY[tail] = ny;
+                tail++;
             }
         }
         return false;
