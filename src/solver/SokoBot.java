@@ -14,7 +14,8 @@ public class SokoBot {
     private SearchStats lastStats = SearchStats.empty();
     private SearchOutcome lastOutcome = null;
     private static final int SMALL_PUZZLE_BOX_LIMIT = 4;
-    private static final long TOTAL_SOLVE_TIME_LIMIT_MS = 14_800L;
+    private static final long TOTAL_SOLVE_TIME_LIMIT_MS = 14_000L;
+    private static final long SEGMENT_TIME_SLICE_MS = 4_500L;
 
     public String solveSokobanPuzzle(int width, int height, char[][] mapData, char[][] itemsData) {
         long totalBudgetMs = Math.min(Constants.TIME_BUDGET_MS, TOTAL_SOLVE_TIME_LIMIT_MS);
@@ -37,7 +38,8 @@ public class SokoBot {
                 break;
             }
             long remainingMs = Math.max(1L, (deadline - now) / 1_000_000L);
-            SolutionSegment segment = runSingleSearch(width, height, mapData, workingItems, remainingMs);
+            long segmentBudget = Math.min(remainingMs, SEGMENT_TIME_SLICE_MS);
+            SolutionSegment segment = runSingleSearch(width, height, mapData, workingItems, segmentBudget);
             aggregateStats.accumulate(segment.stats);
             combinedPlan.append(segment.plan);
             segmentValidation = segment.validation;

@@ -215,7 +215,7 @@ public final class GBFS {
 
             if (!deadlockDetector.regionHasGoalForMove(parentBoxes, boxIdx, destX, destY)
                     && !deadlockDetector.regionHasGoalIgnoringBoxes(destX, destY)) {
-                stats.recordRegionPruned();
+                stats.recordRegionPrePruned();
                 continue;
             }
 
@@ -241,7 +241,7 @@ public final class GBFS {
 
             if (!deadlockDetector.regionHasGoalForMove(finalBoxes, movedIdx, moved.x, moved.y)
                     && !deadlockDetector.regionHasGoalIgnoringBoxes(moved.x, moved.y)) {
-                stats.recordRegionPruned();
+                stats.recordRegionPostPruned();
                 continue;
             }
             if (!deadlockDetector.roomHasEnoughGoalsForMove(finalBoxes, movedIdx, moved.x, moved.y)) {
@@ -305,7 +305,8 @@ public final class GBFS {
         final int dy = Constants.DIRECTION_Y[dir];
 
         while (true) {
-            Coordinate moved = current.getBoxes()[movedIdx];
+            Coordinate[] boxes = current.getBoxes();
+            Coordinate moved = boxes[movedIdx];
 
             if (mapData[moved.y][moved.x] == Constants.GOAL) break;
             if (!isCorridorCell(moved.x, moved.y, dir)) break;
@@ -317,13 +318,13 @@ public final class GBFS {
             if (mapData[nextY][nextX] == Constants.WALL) break;
             if (current.hasBoxAt(nextX, nextY)) break;
 
-            if (!deadlockDetector.regionHasGoalForMove(current.getBoxes(), movedIdx, nextX, nextY)
+            if (!deadlockDetector.regionHasGoalForMove(boxes, movedIdx, nextX, nextY)
                     && !deadlockDetector.regionHasGoalIgnoringBoxes(nextX, nextY)) {
-                stats.recordRegionPruned();
+                stats.recordRegionPostPruned();
                 break;
             }
 
-            Coordinate[] nextBoxes = copyBoxes(current.getBoxes());
+            Coordinate[] nextBoxes = copyBoxes(boxes);
             nextBoxes[movedIdx] = new Coordinate(nextX, nextY);
 
             Coordinate nextPlayer = new Coordinate(moved.x, moved.y);
@@ -431,10 +432,7 @@ public final class GBFS {
 
     private Coordinate[] copyBoxes(Coordinate[] boxes) {
         Coordinate[] copy = new Coordinate[boxes.length];
-        for (int i = 0; i < boxes.length; i++) {
-            Coordinate b = boxes[i];
-            copy[i] = new Coordinate(b.x, b.y);
-        }
+        System.arraycopy(boxes, 0, copy, 0, boxes.length);
         return copy;
     }
 
