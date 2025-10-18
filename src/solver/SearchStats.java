@@ -96,12 +96,16 @@ public final class SearchStats {
         }
     }
 
-    void recordRegionPrePruned() {
+    void recordRegionPruned() {
         regionPruned++;
     }
 
+    void recordRegionPrePruned() {
+        recordRegionPruned();
+    }
+
     void recordRegionPostPruned() {
-        regionPruned++;
+        recordRegionPruned();
     }
 
     void recordCornerPruned() {
