@@ -14,8 +14,68 @@ public class SokoBot {
     private SearchStats lastStats = SearchStats.empty();
     private SearchOutcome lastOutcome = null;
     private static final int SMALL_PUZZLE_BOX_LIMIT = 4;
+    private static final long TOTAL_SOLVE_TIME_LIMIT_MS = 14_800L;
 
     public String solveSokobanPuzzle(int width, int height, char[][] mapData, char[][] itemsData) {
+        long totalBudgetMs = Math.min(Constants.TIME_BUDGET_MS, TOTAL_SOLVE_TIME_LIMIT_MS);
+        long totalBudgetNanos = totalBudgetMs * 1_000_000L;
+        long solveStart = System.nanoTime();
+        long deadline = solveStart + totalBudgetNanos;
+
+        SearchStats aggregateStats = new SearchStats();
+        aggregateStats.reset(totalBudgetNanos);
+        aggregateStats.markStart(solveStart);
+
+        char[][] workingItems = cloneItems(itemsData);
+        StringBuilder combinedPlan = new StringBuilder();
+        ReplayValidator.ValidationResult segmentValidation = null;
+        int previousBoxesOnGoals = countBoxesOnGoals(workingItems, mapData);
+
+        while (true) {
+            long now = System.nanoTime();
+            if (now >= deadline) {
+                break;
+            }
+            long remainingMs = Math.max(1L, (deadline - now) / 1_000_000L);
+            SolutionSegment segment = runSingleSearch(width, height, mapData, workingItems, remainingMs);
+            aggregateStats.accumulate(segment.stats);
+            combinedPlan.append(segment.plan);
+            segmentValidation = segment.validation;
+
+            if (segmentValidation != null && segmentValidation.finalItems != null) {
+                workingItems = cloneItems(segmentValidation.finalItems);
+            }
+
+            int boxesOnGoals = segmentValidation != null ? segmentValidation.boxesOnGoals : previousBoxesOnGoals;
+            boolean improved = boxesOnGoals > previousBoxesOnGoals;
+            previousBoxesOnGoals = boxesOnGoals;
+
+            if (segmentValidation != null && segmentValidation.solved) {
+                break;
+            }
+            if (segment.plan.isEmpty() || !improved) {
+                break;
+            }
+        }
+
+        String finalPlan = combinedPlan.toString();
+        ReplayValidator.ValidationResult finalValidation = ReplayValidator.validate(mapData, itemsData, finalPlan);
+        long solveEnd = System.nanoTime();
+        boolean limitHit = solveEnd > deadline && !finalValidation.solved;
+
+        aggregateStats.markFinish(solveEnd, limitHit, finalPlan.length(), finalValidation.pushes, 0);
+
+        lastStats = aggregateStats.snapshot();
+        lastOutcome = new SearchOutcome(finalPlan, finalValidation.solved, finalValidation.solved ? finalPlan : null);
+
+        return finalPlan;
+    }
+
+    private SolutionSegment runSingleSearch(int width,
+                                            int height,
+                                            char[][] mapData,
+                                            char[][] itemsData,
+                                            long timeBudgetMs) {
         player = null;
         boxList.clear();
         goalList.clear();
@@ -29,36 +89,98 @@ public class SokoBot {
         Components.build(mapData, goals);
         Rooms.build(mapData, goals);
 
+        long segmentStart = System.nanoTime();
+
         String bfsPlan = trySolveSmallPuzzle(mapData, boxes, player, goals);
         if (bfsPlan != null) {
-            lastStats = SearchStats.empty();
-            lastOutcome = new SearchOutcome(bfsPlan, true, bfsPlan);
-            return bfsPlan;
+            ReplayValidator.ValidationResult validation = ReplayValidator.validate(mapData, itemsData, bfsPlan);
+            SearchStats stats = new SearchStats();
+            long budgetNanos = Math.max(1L, timeBudgetMs) * 1_000_000L;
+            stats.reset(budgetNanos);
+            stats.markStart(segmentStart);
+            long segmentEnd = System.nanoTime();
+            stats.markFinish(segmentEnd, false, bfsPlan.length(), validation.pushes, 0);
+            SearchOutcome outcome = new SearchOutcome(bfsPlan, validation.solved, validation.solved ? bfsPlan : null);
+            return new SolutionSegment(bfsPlan, stats.snapshot(), outcome, validation);
         }
 
         Heuristic.initialize(mapData, goals);
         State initial = State.initial(player, boxes, Heuristic.evaluate(player, boxes));
 
-        GBFS solver = new GBFS(mapData, goals);
-        SearchOutcome outcome = solver.search(initial);
-        lastStats = solver.getStatistics();
-        lastOutcome = outcome;
+        GBFS solver = new GBFS(mapData, goals, timeBudgetMs);
+        SearchOutcome rawOutcome = solver.search(initial);
+        SearchStats stats = solver.getStatistics();
 
-        String planToReturn = outcome.getBestPlan();
+        String planToReturn = rawOutcome.getBestPlan();
+        if (planToReturn == null) {
+            planToReturn = "";
+        }
+
         ReplayValidator.ValidationResult validation = ReplayValidator.validate(mapData, itemsData, planToReturn);
         if (!validation.fullyValid) {
             int idx = validation.lastValidIndex;
             planToReturn = idx >= 0 ? planToReturn.substring(0, idx + 1) : "";
+            validation = ReplayValidator.validate(mapData, itemsData, planToReturn);
         }
 
-        if (!validation.solved && outcome.getBestCompletePlan() != null) {
-            ReplayValidator.ValidationResult full = ReplayValidator.validate(mapData, itemsData, outcome.getBestCompletePlan());
+        if (!validation.solved && rawOutcome.getBestCompletePlan() != null) {
+            String completePlan = rawOutcome.getBestCompletePlan();
+            ReplayValidator.ValidationResult full = ReplayValidator.validate(mapData, itemsData, completePlan);
             if (full.fullyValid && full.solved) {
-                planToReturn = outcome.getBestCompletePlan();
+                planToReturn = completePlan;
+                validation = full;
             }
         }
 
-        return planToReturn;
+        SearchOutcome adjustedOutcome = new SearchOutcome(planToReturn, validation.solved,
+                validation.solved ? planToReturn : rawOutcome.getBestCompletePlan());
+        return new SolutionSegment(planToReturn, stats, adjustedOutcome, validation);
+    }
+
+    private static char[][] cloneItems(char[][] source) {
+        if (source == null) {
+            return new char[0][0];
+        }
+        char[][] copy = new char[source.length][];
+        for (int i = 0; i < source.length; i++) {
+            copy[i] = source[i] == null ? new char[0] : source[i].clone();
+        }
+        return copy;
+    }
+
+    private static int countBoxesOnGoals(char[][] items, char[][] map) {
+        if (items == null || map == null) {
+            return 0;
+        }
+        int count = 0;
+        int rows = Math.min(items.length, map.length);
+        for (int y = 0; y < rows; y++) {
+            int cols = Math.min(items[y].length, map[y].length);
+            for (int x = 0; x < cols; x++) {
+                char item = items[y][x];
+                char mapCell = map[y][x];
+                if (item == Constants.BOX_ON_GOAL) {
+                    count++;
+                } else if (item == Constants.BOX && mapCell == Constants.GOAL) {
+                    count++;
+                }
+            }
+        }
+        return count;
+    }
+
+    private static final class SolutionSegment {
+        final String plan;
+        final SearchStats stats;
+        final SearchOutcome outcome;
+        final ReplayValidator.ValidationResult validation;
+
+        SolutionSegment(String plan, SearchStats stats, SearchOutcome outcome, ReplayValidator.ValidationResult validation) {
+            this.plan = plan;
+            this.stats = stats;
+            this.outcome = outcome;
+            this.validation = validation;
+        }
     }
 
     private void extractMap(char[][] mapData, char[][] itemsData, int height, int width) {
