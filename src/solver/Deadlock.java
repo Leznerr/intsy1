@@ -256,20 +256,28 @@ public final class Deadlock {
         if (!isBlockedByWallOrBox(x, oppositeY, boxes, -1)) {
             return false;
         }
-        for (int stepX = -1; stepX <= 1; stepX += 2) {
-            int cx = x + stepX;
-            while (inBounds(cx, y) && mapData[y][cx] != Constants.WALL) {
-                if (!isWallOrOutOfBounds(cx, y + wallDy)) {
-                    break;
-                }
-                if (isGoal(cx, y)) {
-                    return false;
-                }
-                if (!isBlockedByWallOrBox(cx, oppositeY, boxes, -1)) {
-                    return false;
-                }
-                cx += stepX;
+        return checkHorizontalOneSidedDirection(x, y, boxes, wallDy, oppositeY, -1)
+                && checkHorizontalOneSidedDirection(x, y, boxes, wallDy, oppositeY, 1);
+    }
+
+    private boolean checkHorizontalOneSidedDirection(int x,
+                                                     int y,
+                                                     Coordinate[] boxes,
+                                                     int wallDy,
+                                                     int oppositeY,
+                                                     int stepX) {
+        int cx = x + stepX;
+        while (inBounds(cx, y) && mapData[y][cx] != Constants.WALL) {
+            if (!isWallOrOutOfBounds(cx, y + wallDy)) {
+                return true;
             }
+            if (isGoal(cx, y)) {
+                return false;
+            }
+            if (!isBlockedByWallOrBox(cx, oppositeY, boxes, -1)) {
+                return false;
+            }
+            cx += stepX;
         }
         return true;
     }
@@ -279,20 +287,28 @@ public final class Deadlock {
         if (!isBlockedByWallOrBox(oppositeX, y, boxes, -1)) {
             return false;
         }
-        for (int stepY = -1; stepY <= 1; stepY += 2) {
-            int cy = y + stepY;
-            while (inBounds(x, cy) && mapData[cy][x] != Constants.WALL) {
-                if (!isWallOrOutOfBounds(x + wallDx, cy)) {
-                    break;
-                }
-                if (isGoal(x, cy)) {
-                    return false;
-                }
-                if (!isBlockedByWallOrBox(oppositeX, cy, boxes, -1)) {
-                    return false;
-                }
-                cy += stepY;
+        return checkVerticalOneSidedDirection(x, y, boxes, wallDx, oppositeX, -1)
+                && checkVerticalOneSidedDirection(x, y, boxes, wallDx, oppositeX, 1);
+    }
+
+    private boolean checkVerticalOneSidedDirection(int x,
+                                                   int y,
+                                                   Coordinate[] boxes,
+                                                   int wallDx,
+                                                   int oppositeX,
+                                                   int stepY) {
+        int cy = y + stepY;
+        while (inBounds(x, cy) && mapData[cy][x] != Constants.WALL) {
+            if (!isWallOrOutOfBounds(x + wallDx, cy)) {
+                return true;
             }
+            if (isGoal(x, cy)) {
+                return false;
+            }
+            if (!isBlockedByWallOrBox(oppositeX, cy, boxes, -1)) {
+                return false;
+            }
+            cy += stepY;
         }
         return true;
     }
