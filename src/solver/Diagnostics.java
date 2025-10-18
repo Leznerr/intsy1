@@ -18,9 +18,6 @@ public final class Diagnostics {
         truncated = false;
         pendingSummary = null;
         finished = false;
-        if (ENABLED) {
-            log("== " + mapName + " ==");
-        }
     }
 
     public static void markSearchStart() {
@@ -28,13 +25,21 @@ public final class Diagnostics {
     }
 
     public static void markSearchFinish(boolean solvedFlag, boolean limitHitFlag) {
-        if (!ENABLED) {
+        if (!ENABLED || finished) {
             return;
         }
-        if (pendingSummary == null) {
-            pendingSummary = "solved=" + solvedFlag + " limit_hit=" + limitHitFlag;
+        String summary = pendingSummary;
+        if (summary == null || summary.isEmpty()) {
+            summary = "solved=" + solvedFlag + " limit_hit=" + limitHitFlag;
+        } else {
+            if (!summary.contains("solved=")) {
+                summary = summary + " solved=" + solvedFlag;
+            }
+            if (!summary.contains("limit_hit=")) {
+                summary = summary + " limit_hit=" + limitHitFlag;
+            }
         }
-        log(pendingSummary);
+        log(summary);
         pendingSummary = null;
         finished = true;
     }
@@ -56,7 +61,14 @@ public final class Diagnostics {
                     + " limit_hit=" + limitHitFlag
                     + " closed=" + closedSize;
         }
-        log(pendingSummary);
+        String summary = pendingSummary;
+        if (!summary.contains("solved=")) {
+            summary = summary + " solved=" + solvedFlag;
+        }
+        if (!summary.contains("limit_hit=")) {
+            summary = summary + " limit_hit=" + limitHitFlag;
+        }
+        log(summary);
         pendingSummary = null;
         finished = true;
     }

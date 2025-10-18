@@ -28,6 +28,7 @@ public final class Heuristic {
     private static int[] regionQueueY = new int[0];
     private static int[] bfsQueueX = new int[0];
     private static int[] bfsQueueY = new int[0];
+    private static Deadlock deadlockHelper;
 
     private Heuristic() {}
 
@@ -57,6 +58,7 @@ public final class Heuristic {
             regionToken = 1;
             occupancyToken = 1;
             AssignCache.clear();
+            deadlockHelper = null;
             return;
         }
 
@@ -79,6 +81,7 @@ public final class Heuristic {
         buildMinToAnyGoal();
         ensureCostCapacity(cachedGoals.length);
         ensureDpCapacity(cachedGoals.length);
+        deadlockHelper = new Deadlock(mapData, goals);
     }
 
     public static int evaluate(State state) {
@@ -107,10 +110,20 @@ public final class Heuristic {
         }
         Coordinate[] sortedBoxes = boxes.clone();
         Arrays.sort(sortedBoxes);
+        long evalStart = Diagnostics.now();
+
+        if (deadlockHelper != null && isStaticDeadlock(sortedBoxes)) {
+            if (Diagnostics.ENABLED) {
+                Diagnostics.recordAssignmentValue(Integer.MAX_VALUE);
+                Diagnostics.recordHeuristicEvaluation(true);
+                Diagnostics.noteHeuristicDuration(System.nanoTime() - evalStart);
+            }
+            return Integer.MAX_VALUE;
+        }
+
         final Coordinate[] key = sortedBoxes;
         final int bc = boxCount;
         final int gc = goalCount;
-        long evalStart = Diagnostics.now();
         int assignment = AssignCache.getOrCompute(key, () -> assignmentLowerBound(key, bc, gc));
         boolean inf = assignment >= INF;
         if (Diagnostics.ENABLED) {
@@ -411,6 +424,36 @@ public final class Heuristic {
             bfsQueueX = new int[capacity];
             bfsQueueY = new int[capacity];
         }
+    }
+
+    private static boolean isStaticDeadlock(Coordinate[] boxes) {
+        if (deadlockHelper == null || boxes == null) {
+            return false;
+        }
+        for (int i = 0; i < boxes.length; i++) {
+            Coordinate box = boxes[i];
+            if (deadlockHelper.isCornerNoGoal(box.x, box.y)) {
+                return true;
+            }
+            if (deadlockHelper.quickFrozenSquare(box.x, box.y, boxes)) {
+                return true;
+            }
+            if (deadlockHelper.isWallLineFreeze(box.x, box.y, boxes)) {
+                return true;
+            }
+            if (!deadlockHelper.regionHasGoalForMove(boxes, i, box.x, box.y)) {
+                if (!deadlockHelper.regionHasGoalIgnoringBoxes(box.x, box.y)) {
+                    return true;
+                }
+            }
+            if (!deadlockHelper.roomHasEnoughGoalsForMove(boxes, i, box.x, box.y)) {
+                return true;
+            }
+            if (!deadlockHelper.compHasEnoughGoalsForMove(boxes, i, box.x, box.y)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static int computeDistanceDelta(State state) {
