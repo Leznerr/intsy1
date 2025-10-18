@@ -134,7 +134,11 @@ public final class State {
     }
 
     private static Coordinate[] copyAndSort(Coordinate[] boxes) {
-        Coordinate[] copy = boxes.clone();
+        Coordinate[] copy = new Coordinate[boxes.length];
+        for (int i = 0; i < boxes.length; i++) {
+            Coordinate c = boxes[i];
+            copy[i] = new Coordinate(c.x, c.y);
+        }
         Arrays.sort(copy);
         return copy;
     }
