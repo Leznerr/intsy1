@@ -4,6 +4,7 @@ public final class Rooms {
     public static int rows, cols;
     public static int[][] roomId;     // -1 for wall, [0..R)
     public static int[] goalsInRoom;
+    public static int[] roomArea;
 
     private Rooms() {}
 
@@ -32,6 +33,15 @@ public final class Rooms {
                 }
             }
             rid++;
+        }
+        roomArea = new int[rid];
+        for (int y = 0; y < rows; y++) {
+            for (int x = 0; x < cols; x++) {
+                int r = roomId[y][x];
+                if (r >= 0) {
+                    roomArea[r]++;
+                }
+            }
         }
         goalsInRoom = new int[rid];
         if (goals!=null){

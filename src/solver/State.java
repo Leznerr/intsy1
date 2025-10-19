@@ -5,7 +5,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 public final class State {
     private static final AtomicLong INSERTION_SEQUENCE = new AtomicLong(1L);
-    private static final int HEURISTIC_WEIGHT = 1000;
+    private static final int CORRIDOR_PENALTY_WEIGHT = 5;
 
     private final Coordinate player;
     private final Coordinate[] boxes;
@@ -21,6 +21,9 @@ public final class State {
     private final char[] prePushWalk;
     private final int movedBoxIndex;
     private final long goalDistanceSquaredSum;
+    private final int boxesOnGoals;
+    private final int lastPushProgress;
+    private final int corridorEntrancePenalty;
 
     private State(Coordinate player,
                   Coordinate[] boxes,
@@ -34,7 +37,10 @@ public final class State {
                   long hash,
                   char[] prePushWalk,
                   int movedBoxIndex,
-                  long goalDistanceSquaredSum) {
+                  long goalDistanceSquaredSum,
+                  int boxesOnGoals,
+                  int lastPushProgress,
+                  int corridorEntrancePenalty) {
         this.player = player;
         this.boxes = boxes;
         this.parent = parent;
@@ -43,13 +49,10 @@ public final class State {
         this.depth = depth;
         this.pushes = pushes;
         this.heuristic = heuristic;
-        if (heuristic == Integer.MAX_VALUE) {
-            this.fCost = Integer.MAX_VALUE;
-        } else {
-            long weighted = (long) heuristic * HEURISTIC_WEIGHT;
-            long total = pushes + weighted;
-            this.fCost = total >= Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) total;
-        }
+        this.boxesOnGoals = boxesOnGoals;
+        this.lastPushProgress = lastPushProgress;
+        this.corridorEntrancePenalty = corridorEntrancePenalty;
+        this.fCost = computeFCost(heuristic, pushes, boxes, corridorEntrancePenalty);
         this.insertionId = insertionId;
         this.hash = hash;
         this.prePushWalk = prePushWalk == null ? new char[0] : prePushWalk.clone();
@@ -73,7 +76,10 @@ public final class State {
                 hash,
                 new char[0],
                 -1,
-                goalDistanceSquaredSum);
+                goalDistanceSquaredSum,
+                countBoxesOnGoals(orderedBoxes),
+                0,
+                Heuristic.corridorEntrancePenalty(orderedBoxes));
     }
 
     public static State push(State parent,
@@ -89,6 +95,9 @@ public final class State {
         int movedIndex = findIndex(ordered, movedCoordinate);
         int additionalDepth = prePushWalk == null ? 0 : prePushWalk.length;
         long goalDistanceSquaredSum = computeGoalDistanceSquaredSum(ordered);
+        int boxesOnGoals = countBoxesOnGoals(ordered);
+        int lastPushProgress = boxesOnGoals - parent.boxesOnGoals;
+        int corridorPenalty = Heuristic.corridorEntrancePenalty(ordered);
         return new State(nextPlayer,
                 ordered,
                 parent,
@@ -101,7 +110,10 @@ public final class State {
                 hash,
                 prePushWalk,
                 movedIndex,
-                goalDistanceSquaredSum);
+                goalDistanceSquaredSum,
+                boxesOnGoals,
+                lastPushProgress,
+                corridorPenalty);
     }
 
     private static int findIndex(Coordinate[] boxes, Coordinate target) {
@@ -190,6 +202,18 @@ public final class State {
         return goalDistanceSquaredSum;
     }
 
+    public int getBoxesOnGoals() {
+        return boxesOnGoals;
+    }
+
+    public int getLastPushProgress() {
+        return lastPushProgress;
+    }
+
+    public int getCorridorEntrancePenalty() {
+        return corridorEntrancePenalty;
+    }
+
     public State withHeuristic(int newHeuristic) {
         if (this.heuristic == newHeuristic) {
             return this;
@@ -206,7 +230,10 @@ public final class State {
                 this.hash,
                 this.prePushWalk,
                 this.movedBoxIndex,
-                this.goalDistanceSquaredSum);
+                this.goalDistanceSquaredSum,
+                this.boxesOnGoals,
+                this.lastPushProgress,
+                this.corridorEntrancePenalty);
     }
 
     public int getFCost() {
@@ -277,6 +304,36 @@ public final class State {
             total += contribution;
         }
         return total;
+    }
+
+    private static int countBoxesOnGoals(Coordinate[] boxes) {
+        int count = 0;
+        for (Coordinate box : boxes) {
+            if (Heuristic.nearestGoalDistance(box.x, box.y) == 0) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private static int computeFCost(int heuristic, int pushes, Coordinate[] boxes, int corridorPenalty) {
+        if (heuristic == Integer.MAX_VALUE) {
+            return Integer.MAX_VALUE;
+        }
+        int weight = dynamicWeight(Heuristic.unplacedBoxesCount(boxes));
+        long weighted = (long) heuristic * (long) weight + (long) corridorPenalty * CORRIDOR_PENALTY_WEIGHT;
+        long total = pushes + weighted;
+        return total >= Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) total;
+    }
+
+    private static int dynamicWeight(int remaining) {
+        if (remaining >= 5) {
+            return 1000;
+        }
+        if (remaining >= 3) {
+            return 600;
+        }
+        return 300;
     }
 
     @Override

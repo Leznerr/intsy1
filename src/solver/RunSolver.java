@@ -95,7 +95,16 @@ public final class RunSolver {
                         + " corner=" + st.getCornerPruned()
                         + " freeze=" + st.getFreezePruned()
                         + " wallLine=" + st.getWallLinePruned()
-                        + " dup=" + st.getDuplicatePruned());
+                        + " dup=" + st.getDuplicatePruned()
+                        + " goals=" + validation.boxesOnGoals
+                        + " solved=" + solved);
+
+                if (!solved && validation.finalItems != null) {
+                    System.out.println(mapName + " final board:");
+                    dumpBoard(mapData, validation.finalItems);
+                    System.out.println("remaining goals: " + listGoals(mapData, validation.finalItems));
+                    System.out.println("box positions: " + listBoxes(validation.finalItems));
+                }
 
                 if (Diagnostics.ENABLED) {
                     Diagnostics.emitDiagnostics(st.getElapsedMillis(), solved, st.isTimeLimitHit(), st.getClosedStates());
@@ -104,6 +113,9 @@ public final class RunSolver {
                 if (len == 0) {
                     anyFail = true;
                 }
+            } catch (OutOfMemoryError oom) {
+                anyFail = true;
+                System.out.println(mapName + " ERROR: out of memory. Consider running with -Xmx1024m or increasing the system paging file.");
             } catch (Exception e) {
                 anyFail = true;
                 System.out.println(mapName + " ERROR: " + e.getMessage());
@@ -142,5 +154,55 @@ public final class RunSolver {
         if (diagEnabled && !Diagnostics.ENABLED) {
             System.err.println("Diagnostics requested but disabled at compile time.");
         }
+    }
+
+    private static void dumpBoard(char[][] map, char[][] items) {
+        for (int y = 0; y < map.length; y++) {
+            StringBuilder row = new StringBuilder();
+            for (int x = 0; x < map[y].length; x++) {
+                char item = items[y][x];
+                char cell = map[y][x];
+                char render;
+                if (item != ' ' && item != 0) {
+                    render = item;
+                } else if (cell == Constants.WALL) {
+                    render = '#';
+                } else if (cell == Constants.GOAL) {
+                    render = '.';
+                } else {
+                    render = ' ';
+                }
+                row.append(render);
+            }
+            System.out.println(row);
+        }
+    }
+
+    private static java.util.List<String> listGoals(char[][] map, char[][] items) {
+        java.util.List<String> goals = new java.util.ArrayList<>();
+        for (int y = 0; y < map.length; y++) {
+            for (int x = 0; x < map[y].length; x++) {
+                if (map[y][x] == Constants.GOAL && items[y][x] != Constants.BOX_ON_GOAL) {
+                    goals.add(x + "," + y);
+                }
+            }
+        }
+        return goals;
+    }
+
+    private static java.util.List<String> listBoxes(char[][] items) {
+        java.util.List<String> boxes = new java.util.ArrayList<>();
+        for (int y = 0; y < items.length; y++) {
+            if (items[y] == null) {
+                continue;
+            }
+            for (int x = 0; x < items[y].length; x++) {
+                char c = items[y][x];
+                if (c == Constants.BOX || c == Constants.BOX_ON_GOAL) {
+                    boxes.add(x + "," + y + (c == Constants.BOX_ON_GOAL ? "*" : ""));
+                }
+            }
+        }
+        return boxes;
     }
 }

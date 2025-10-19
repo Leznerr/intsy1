@@ -1,9 +1,14 @@
 package solver;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Queue;
 
 public final class Deadlock {
+    private static volatile boolean enabled = true;
+
     private final char[][] mapData;
     private final boolean[][] goal;
     private final int rows;
@@ -14,6 +19,11 @@ public final class Deadlock {
     private int regionToken = 1;
     private final int[][] occupiedStamp;
     private int occupiedToken = 1;
+    private final HashMap<Long, Boolean> strictRegionMemo = new HashMap<>();
+    private final int[][] goalComponentId;
+    private final int[][] goalDepth;
+    private boolean[] goalComponentEnforce;
+    private int goalComponentCount;
 
     public Deadlock(char[][] mapData, Coordinate[] goalCoordinates) {
         this.mapData = mapData;
@@ -28,16 +38,29 @@ public final class Deadlock {
         this.boxStamp = new int[rows][cols];
         this.regionStamp = new int[rows][cols];
         this.occupiedStamp = new int[rows][cols];
+        this.goalComponentId = new int[rows][cols];
+        this.goalDepth = new int[rows][cols];
+        for (int y = 0; y < rows; y++) {
+            java.util.Arrays.fill(goalComponentId[y], -1);
+            java.util.Arrays.fill(goalDepth[y], -1);
+        }
         DeadlockCache.clear();
         RegionCache.clear();
+        buildGoalOrderingMetadata();
     }
 
     public boolean isDeadlock(State state) {
+        if (!enabled) {
+            return false;
+        }
         markBoxes(state);
         return DeadlockCache.getOrCompute(state.getBoxes(), () -> evaluateDeadlock(state));
     }
 
     private boolean evaluateDeadlock(State state) {
+        if (!enabled) {
+            return false;
+        }
         for (Coordinate box : state.getBoxes()) {
             if (isGoal(box.x, box.y)) {
                 continue;
@@ -58,7 +81,14 @@ public final class Deadlock {
                 return true;
             }
         }
+        if (violatesGoalCorridorOrder(state.getBoxes())) {
+            return true;
+        }
         return false;
+    }
+
+    public static void setEnabled(boolean value) {
+        enabled = value;
     }
 
     private void markBoxes(State state) {
@@ -107,18 +137,15 @@ public final class Deadlock {
     }
 
     boolean compHasEnoughGoalsForMove(State state, int movedIdx, int destX, int destY) {
+        if (!enabled) {
+            return true;
+        }
         return compHasEnoughGoalsForMove(state.getBoxes(), movedIdx, destX, destY);
     }
 
     boolean compHasEnoughGoalsForMove(Coordinate[] boxes, int movedIdx, int destX, int destY) {
-        if (!inBounds(destX, destY) || mapData[destY][destX] == Constants.WALL) {
-            return false;
-        }
-        if (isCornerNoGoal(destX, destY)) {
-            return false;
-        }
-        if (quickFrozenSquare(destX, destY, boxes)) {
-            return false;
+        if (!enabled) {
+            return true;
         }
         final int comp = Components.compId[destY][destX];
         if (comp < 0) {
@@ -134,14 +161,30 @@ public final class Deadlock {
                 count++;
             }
         }
-        return count <= Components.goalsInComp[comp];
+        int compGoalQuota = Components.goalsInComp[comp];
+        if (isGoal(destX, destY)) {
+            return true;
+        }
+        boolean corridorOneWide =
+                (isWallOrOutOfBounds(destX - 1, destY) && isWallOrOutOfBounds(destX + 1, destY))
+                        || (isWallOrOutOfBounds(destX, destY - 1) && isWallOrOutOfBounds(destX, destY + 1));
+        if (corridorOneWide && count <= compGoalQuota + 1) {
+            return true;
+        }
+        return count <= compGoalQuota;
     }
 
     boolean roomHasEnoughGoalsForMove(State state, int movedIdx, int destX, int destY) {
+        if (!enabled) {
+            return true;
+        }
         return roomHasEnoughGoalsForMove(state.getBoxes(), movedIdx, destX, destY);
     }
 
     boolean roomHasEnoughGoalsForMove(Coordinate[] boxes, int movedIdx, int destX, int destY) {
+        if (!enabled) {
+            return true;
+        }
         if (!inBounds(destX, destY) || mapData[destY][destX] == Constants.WALL) {
             return false;
         }
@@ -169,6 +212,15 @@ public final class Deadlock {
             if (b != null && Rooms.roomId[b.y][b.x] == r) {
                 count++;
             }
+        }
+        if (mapData[destY][destX] == Constants.GOAL) {
+            return true;
+        }
+        boolean corridorOneWide =
+                (isWallOrOutOfBounds(destX, destY - 1) && isWallOrOutOfBounds(destX, destY + 1))
+                        || (isWallOrOutOfBounds(destX - 1, destY) && isWallOrOutOfBounds(destX + 1, destY));
+        if (corridorOneWide && count <= quota + 1) {
+            return true;
         }
         return count <= quota;
     }
@@ -366,6 +418,9 @@ public final class Deadlock {
     }
 
     boolean quickFrozenSquare(int x, int y, Coordinate[] boxes) {
+        if (!enabled) {
+            return false;
+        }
         int[][] offsets = {{0, 0}, {-1, 0}, {-1, -1}, {0, -1}};
         for (int[] offset : offsets) {
             if (formsTwoByTwoFast(offset[0] + x, offset[1] + y, boxes)) {
@@ -442,6 +497,9 @@ public final class Deadlock {
     }
 
     public boolean regionHasGoalForMove(Coordinate[] boxes, int movedIdx, int destX, int destY) {
+        if (!enabled) {
+            return true;
+        }
         if (!inBounds(destX, destY)) {
             return false;
         }
@@ -455,6 +513,14 @@ public final class Deadlock {
     private boolean computeRegionHasGoalForMove(Coordinate[] boxes, int movedIdx, int destX, int destY) {
         advanceRegionToken();
         advanceOccupiedToken();
+        long key = (((long) movedIdx) << 48)
+                | (((long) destY & 0xffffL) << 32)
+                | (((long) destX & 0xffffL) << 16)
+                | ((long) occupiedToken & 0xffffL);
+        Boolean cached = strictRegionMemo.get(key);
+        if (cached != null) {
+            return cached.booleanValue();
+        }
         int ignoringToken = regionToken;
         Queue<int[]> queue = new ArrayDeque<>();
         for (int i = 0; i < boxes.length; i++) {
@@ -513,10 +579,15 @@ public final class Deadlock {
                 boxesInRegion++;
             }
         }
-        return boxesInRegion <= goalsInRegion;
+        boolean ok = boxesInRegion <= goalsInRegion;
+        strictRegionMemo.put(key, ok);
+        return ok;
     }
 
     public boolean isWallLineFreeze(int x, int y, Coordinate[] boxes) {
+        if (!enabled) {
+            return false;
+        }
         if (!inBounds(x, y)) {
             return false;
         }
@@ -662,6 +733,9 @@ public final class Deadlock {
     }
 
     public boolean regionHasGoalIgnoringBoxes(int startX, int startY) {
+        if (!enabled) {
+            return true;
+        }
         if (!inBounds(startX, startY)) {
             return false;
         }
@@ -726,7 +800,154 @@ public final class Deadlock {
                 java.util.Arrays.fill(occupiedStamp[y], 0);
             }
             occupiedToken = 1;
+            strictRegionMemo.clear();
         }
+    }
+
+    private void buildGoalOrderingMetadata() {
+        List<Boolean> enforceList = new ArrayList<>();
+        int componentIndex = 0;
+        for (int y = 0; y < rows; y++) {
+            for (int x = 0; x < cols; x++) {
+                if (!goal[y][x]) {
+                    continue;
+                }
+                if (goalComponentId[y][x] >= 0) {
+                    continue;
+                }
+                ArrayDeque<int[]> queue = new ArrayDeque<>();
+                List<int[]> cells = new ArrayList<>();
+                List<int[]> boundary = new ArrayList<>();
+                queue.add(new int[] {x, y});
+                goalComponentId[y][x] = componentIndex;
+                boolean enforce = true;
+                while (!queue.isEmpty()) {
+                    int[] cell = queue.remove();
+                    int cx = cell[0];
+                    int cy = cell[1];
+                    cells.add(cell);
+                    boolean boundaryCell = false;
+                    int goalNeighbors = 0;
+                    for (int dir = 0; dir < Constants.DIRECTION_X.length; dir++) {
+                        int nx = cx + Constants.DIRECTION_X[dir];
+                        int ny = cy + Constants.DIRECTION_Y[dir];
+                        if (!inBounds(nx, ny)) {
+                            continue;
+                        }
+                        if (mapData[ny][nx] == Constants.WALL) {
+                            continue;
+                        }
+                        if (goal[ny][nx]) {
+                            goalNeighbors++;
+                            if (goalComponentId[ny][nx] < 0) {
+                                goalComponentId[ny][nx] = componentIndex;
+                                queue.add(new int[] {nx, ny});
+                            }
+                        } else {
+                            boundaryCell = true;
+                        }
+                    }
+                    if (goalNeighbors > 2) {
+                        enforce = false;
+                    }
+                    if (boundaryCell) {
+                        boundary.add(cell);
+                    }
+                }
+                if (boundary.isEmpty()) {
+                    enforce = false;
+                }
+                enforceList.add(enforce);
+                if (enforce) {
+                    ArrayDeque<int[]> depthQueue = new ArrayDeque<>();
+                    for (int[] cell : cells) {
+                        int cx = cell[0];
+                        int cy = cell[1];
+                        goalDepth[cy][cx] = -1;
+                    }
+                    for (int[] cell : boundary) {
+                        int cx = cell[0];
+                        int cy = cell[1];
+                        goalDepth[cy][cx] = 0;
+                        depthQueue.add(cell);
+                    }
+                    while (!depthQueue.isEmpty()) {
+                        int[] cell = depthQueue.remove();
+                        int cx = cell[0];
+                        int cy = cell[1];
+                        int base = goalDepth[cy][cx];
+                        for (int dir = 0; dir < Constants.DIRECTION_X.length; dir++) {
+                            int nx = cx + Constants.DIRECTION_X[dir];
+                            int ny = cy + Constants.DIRECTION_Y[dir];
+                            if (!inBounds(nx, ny)) {
+                                continue;
+                            }
+                            if (goalComponentId[ny][nx] != componentIndex) {
+                                continue;
+                            }
+                            if (goalDepth[ny][nx] != -1) {
+                                continue;
+                            }
+                            goalDepth[ny][nx] = base + 1;
+                            depthQueue.add(new int[] {nx, ny});
+                        }
+                    }
+                } else {
+                    for (int[] cell : cells) {
+                        int cx = cell[0];
+                        int cy = cell[1];
+                        goalDepth[cy][cx] = -1;
+                    }
+                }
+                componentIndex++;
+            }
+        }
+        goalComponentCount = componentIndex;
+        goalComponentEnforce = new boolean[goalComponentCount];
+        for (int i = 0; i < enforceList.size(); i++) {
+            goalComponentEnforce[i] = enforceList.get(i);
+        }
+    }
+
+    private boolean violatesGoalCorridorOrder(Coordinate[] boxes) {
+        if (goalComponentCount == 0) {
+            return false;
+        }
+        int[] maxEmpty = new int[goalComponentCount];
+        int[] minFilled = new int[goalComponentCount];
+        java.util.Arrays.fill(maxEmpty, -1);
+        java.util.Arrays.fill(minFilled, Integer.MAX_VALUE);
+        for (int y = 0; y < rows; y++) {
+            for (int x = 0; x < cols; x++) {
+                int comp = goalComponentId[y][x];
+                if (comp < 0 || !goalComponentEnforce[comp]) {
+                    continue;
+                }
+                int depth = goalDepth[y][x];
+                if (depth < 0) {
+                    continue;
+                }
+                boolean has = hasBox(boxes, -1, x, y);
+                if (has) {
+                    if (depth < minFilled[comp]) {
+                        minFilled[comp] = depth;
+                    }
+                } else {
+                    if (depth > maxEmpty[comp]) {
+                        maxEmpty[comp] = depth;
+                    }
+                }
+            }
+        }
+        for (int i = 0; i < goalComponentCount; i++) {
+            if (!goalComponentEnforce[i]) {
+                continue;
+            }
+            if (maxEmpty[i] > minFilled[i]) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean inBounds(int x, int y) {

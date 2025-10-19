@@ -112,7 +112,7 @@ public final class Heuristic {
         Arrays.sort(sortedBoxes);
         long evalStart = Diagnostics.now();
 
-        if (deadlockHelper != null && isStaticDeadlock(sortedBoxes)) {
+        if (deadlockHelper != null && sortedBoxes.length > 5 && isStaticDeadlock(sortedBoxes)) {
             if (Diagnostics.ENABLED) {
                 Diagnostics.recordAssignmentValue(Integer.MAX_VALUE);
                 Diagnostics.recordHeuristicEvaluation(true);
@@ -212,6 +212,21 @@ public final class Heuristic {
 
     private static boolean inBounds(int x, int y) {
         return x >= 0 && y >= 0 && y < rows && x < cols;
+    }
+
+    public static boolean isWallOrOutOfBounds(int x, int y) {
+        if (!inBounds(x, y)) {
+            return true;
+        }
+        return cachedMap[y][x] == Constants.WALL;
+    }
+
+    private static boolean is1WideVertical(int x, int y) {
+        return isWallOrOutOfBounds(x - 1, y) && isWallOrOutOfBounds(x + 1, y);
+    }
+
+    private static boolean is1WideHorizontal(int x, int y) {
+        return isWallOrOutOfBounds(x, y - 1) && isWallOrOutOfBounds(x, y + 1);
     }
 
     private static int estimatePlayerProximity(Coordinate player, Coordinate[] boxes) {
@@ -485,6 +500,96 @@ public final class Heuristic {
             return INF;
         }
         return minToAnyGoal[y][x];
+    }
+
+    public static int unplacedBoxesCount(Coordinate[] boxes) {
+        int count = 0;
+        for (Coordinate box : boxes) {
+            if (box == null) {
+                continue;
+            }
+            if (nearestGoalDistance(box.x, box.y) != 0) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+        public static int corridorEntrancePenalty(Coordinate[] boxes) {
+        int penalty = 0;
+        for (Coordinate box : boxes) {
+            if (box == null) {
+                continue;
+            }
+            int x = box.x;
+            int y = box.y;
+            boolean vertical = is1WideVertical(x, y);
+            boolean horizontal = !vertical && is1WideHorizontal(x, y);
+            if (!vertical && !horizontal) {
+                continue;
+            }
+            int dirX = 0;
+            int dirY = 0;
+            if (vertical) {
+                int upExit = corridorExitDistance(x, y, 0, -1, true);
+                int downExit = corridorExitDistance(x, y, 0, 1, true);
+                dirY = (upExit <= downExit) ? -1 : 1;
+            } else {
+                int leftExit = corridorExitDistance(x, y, -1, 0, false);
+                int rightExit = corridorExitDistance(x, y, 1, 0, false);
+                dirX = (leftExit <= rightExit) ? -1 : 1;
+            }
+            if (emptyGoalBeforeBoxOnLine(boxes, x, y, dirX, dirY)) {
+                penalty++;
+            }
+        }
+        return penalty;
+    }
+
+    private static int corridorExitDistance(int startX, int startY, int dx, int dy, boolean vertical) {
+        int distance = 0;
+        int x = startX + dx;
+        int y = startY + dy;
+        while (inBounds(x, y) && cachedMap[y][x] != Constants.WALL) {
+            boolean stillNarrow = vertical ? is1WideVertical(x, y) : is1WideHorizontal(x, y);
+            if (!stillNarrow) {
+                break;
+            }
+            distance++;
+            x += dx;
+            y += dy;
+        }
+        return distance;
+    }
+
+    private static boolean emptyGoalBeforeBoxOnLine(Coordinate[] boxes, int startX, int startY, int dx, int dy) {
+        int x = startX + dx;
+        int y = startY + dy;
+        while (inBounds(x, y) && cachedMap[y][x] != Constants.WALL) {
+            boolean vertical = dx == 0;
+            boolean stillNarrow = vertical ? is1WideVertical(x, y) : is1WideHorizontal(x, y);
+            if (!stillNarrow) {
+                return false;
+            }
+            if (hasBoxAt(boxes, x, y)) {
+                return false;
+            }
+            if (minToAnyGoal[y][x] == 0) {
+                return true;
+            }
+            x += dx;
+            y += dy;
+        }
+        return false;
+    }
+
+private static boolean hasBoxAt(Coordinate[] boxes, int x, int y) {
+        for (Coordinate box : boxes) {
+            if (box != null && box.x == x && box.y == y) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static Coordinate findPreviousLocation(State state) {

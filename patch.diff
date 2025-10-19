@@ -1,0 +1,37 @@
+*** Begin Patch
+*** Update File: src/solver/SearchStats.java
+@@
+-    private long pass2Accepted;
+-    private long pass2Rejected;
++    private long pass2Accepted;
++    private long pass2NeutralAccepted;
++    private long pass2Rejected;
+@@
+-        this.pass2Accepted = other.pass2Accepted;
++        this.pass2Accepted = other.pass2Accepted;
++        this.pass2NeutralAccepted = other.pass2NeutralAccepted;
+         this.pass2Rejected = other.pass2Rejected;
+@@
+-        this.pass2Accepted = 0L;
++        this.pass2Accepted = 0L;
++        this.pass2NeutralAccepted = 0L;
+         this.pass2Rejected = 0L;
+@@
+-        this.pass2Accepted += other.pass2Accepted;
++        this.pass2Accepted += other.pass2Accepted;
++        this.pass2NeutralAccepted += other.pass2NeutralAccepted;
+         this.pass2Rejected += other.pass2Rejected;
+@@
+     void recordPass2Accepted() {
+         pass2Accepted++;
+     }
++
++    void recordPass2NeutralAccepted() {
++        pass2NeutralAccepted++;
++    }
+@@
+-        sb.append(" pass2_acc=").append(pass2Accepted);
++        sb.append(" pass2_acc=").append(pass2Accepted);
++        sb.append(" pass2_neutral=").append(pass2NeutralAccepted);
+         sb.append(" pass2_rej=").append(pass2Rejected);
+*** End Patch

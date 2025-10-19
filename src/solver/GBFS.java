@@ -33,6 +33,7 @@ public final class GBFS {
     private final HashSet<Long> localSignatureBuffer = new HashSet<>();
 
     private State bestFrontierCandidate;
+    private State bestProgressCandidate;
     private State deepestFrontierCandidate;
     private final long timeBudgetNanos;
 
@@ -50,6 +51,18 @@ public final class GBFS {
             return cmp;
         }
         cmp = Integer.compare(a.getDepth(), b.getDepth());
+        if (cmp != 0) {
+            return cmp;
+        }
+        cmp = Integer.compare(b.getBoxesOnGoals(), a.getBoxesOnGoals());
+        if (cmp != 0) {
+            return cmp;
+        }
+        cmp = Integer.compare(b.getLastPushProgress(), a.getLastPushProgress());
+        if (cmp != 0) {
+            return cmp;
+        }
+        cmp = Integer.compare(a.getCorridorEntrancePenalty(), b.getCorridorEntrancePenalty());
         if (cmp != 0) {
             return cmp;
         }
@@ -96,6 +109,7 @@ public final class GBFS {
         stats.recordOpenSize(open.size());
 
         bestFrontierCandidate = initial;
+        bestProgressCandidate = initial;
         deepestFrontierCandidate = initial;
 
         while (!open.isEmpty()) {
@@ -113,6 +127,7 @@ public final class GBFS {
                 Diagnostics.setSummary(stats.toSummaryString());
                 Diagnostics.markSearchFinish(true, false);
                 String plan = current.reconstructPlan();
+                plan = ensureReplayValid(initial, plan);
                 return new SearchOutcome(plan, true, plan);
             }
 
@@ -274,6 +289,11 @@ public final class GBFS {
             if (deadlockDetector.isDeadlock(finalState)) {
                 stats.recordFreezePruned();
                 continue;
+            }
+
+            stats.recordBoxesOnGoalsCandidate(finalState.getBoxesOnGoals());
+            if (finalState.getLastPushProgress() > 0) {
+                stats.recordProgressTiebreakHit();
             }
 
             long childSignature = finalState.getHash();
@@ -457,6 +477,41 @@ public final class GBFS {
         return copy;
     }
 
+    private String ensureReplayValid(State initial, String plan) {
+        if (plan == null || plan.isEmpty()) {
+            return plan == null ? "" : plan;
+        }
+        ReplayValidator.ValidationResult validation = ReplayValidator.validate(mapData, buildItemsFromState(initial), plan);
+        if (validation == null) {
+            return "";
+        }
+        if (!validation.fullyValid) {
+            int idx = validation.lastValidIndex;
+            return idx >= 0 ? plan.substring(0, idx + 1) : "";
+        }
+        return plan;
+    }
+
+    private char[][] buildItemsFromState(State state) {
+        char[][] items = new char[rows][cols];
+        for (int y = 0; y < rows; y++) {
+            java.util.Arrays.fill(items[y], ' ');
+        }
+        Coordinate[] boxes = state.getBoxes();
+        for (Coordinate box : boxes) {
+            if (!inBounds(box.x, box.y)) {
+                continue;
+            }
+            items[box.y][box.x] = mapData[box.y][box.x] == Constants.GOAL ? Constants.BOX_ON_GOAL : Constants.BOX;
+        }
+        Coordinate player = state.getPlayer();
+        if (player != null && inBounds(player.x, player.y)) {
+            boolean onGoal = mapData[player.y][player.x] == Constants.GOAL;
+            items[player.y][player.x] = onGoal ? Constants.PLAYER_ON_GOAL : Constants.PLAYER;
+        }
+        return items;
+    }
+
     private long encodeCost(State state) {
         long pushes = state.getPushes() & 0xffffffffL;
         long depth = state.getDepth() & 0xffffffffL;
@@ -469,6 +524,28 @@ public final class GBFS {
         }
         if (bestFrontierCandidate == null || stateComparator.compare(candidate, bestFrontierCandidate) < 0) {
             bestFrontierCandidate = candidate;
+        }
+        if (bestProgressCandidate == null) {
+            bestProgressCandidate = candidate;
+        } else {
+            int candidateGoals = candidate.getBoxesOnGoals();
+            int bestGoals = bestProgressCandidate.getBoxesOnGoals();
+            if (candidateGoals > bestGoals) {
+                bestProgressCandidate = candidate;
+            } else if (candidateGoals == bestGoals) {
+                int candidatePenalty = candidate.getCorridorEntrancePenalty();
+                int bestPenalty = bestProgressCandidate.getCorridorEntrancePenalty();
+                if (candidatePenalty < bestPenalty) {
+                    bestProgressCandidate = candidate;
+                } else if (candidatePenalty == bestPenalty) {
+                    if (candidate.getPushes() > bestProgressCandidate.getPushes()) {
+                        bestProgressCandidate = candidate;
+                    } else if (candidate.getPushes() == bestProgressCandidate.getPushes()
+                            && candidate.getDepth() > bestProgressCandidate.getDepth()) {
+                        bestProgressCandidate = candidate;
+                    }
+                }
+            }
         }
         if (deepestFrontierCandidate == null) {
             deepestFrontierCandidate = candidate;
@@ -485,6 +562,9 @@ public final class GBFS {
     }
 
     private State selectFallbackState() {
+        if (bestProgressCandidate != null) {
+            return bestProgressCandidate;
+        }
         if (deepestFrontierCandidate != null && deepestFrontierCandidate.getDepth() > 0) {
             return deepestFrontierCandidate;
         }

@@ -3,7 +3,7 @@ package solver;
 public final class Diagnostics {
     private Diagnostics() {}
 
-    public static final boolean ENABLED = false;
+    public static final boolean ENABLED = true;
     public static final int MAX_LOG_LINES = 5_000;
     public static int SAMPLE_MASK = 0;
     public static boolean ZERO_PROXIMITY = false;

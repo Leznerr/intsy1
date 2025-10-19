@@ -2,6 +2,7 @@ package solver;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Queue;
@@ -29,7 +30,12 @@ public class SokoBot {
         char[][] workingItems = cloneItems(itemsData);
         StringBuilder combinedPlan = new StringBuilder();
         ReplayValidator.ValidationResult segmentValidation = null;
+        Coordinate[] goalCoordinates = extractGoals(mapData, itemsData);
+        Heuristic.initialize(mapData, goalCoordinates);
         int previousBoxesOnGoals = countBoxesOnGoals(workingItems, mapData);
+        int previousPenalty = corridorPenalty(workingItems);
+        HashSet<Integer> visitedBoards = new HashSet<>();
+        visitedBoards.add(Arrays.deepHashCode(workingItems));
 
         while (true) {
             long now = System.nanoTime();
@@ -39,21 +45,40 @@ public class SokoBot {
             long remainingMs = Math.max(1L, (deadline - now) / 1_000_000L);
             SolutionSegment segment = runSingleSearch(width, height, mapData, workingItems, remainingMs);
             aggregateStats.accumulate(segment.stats);
-            combinedPlan.append(segment.plan);
             segmentValidation = segment.validation;
 
+            char[][] finalBoard = workingItems;
             if (segmentValidation != null && segmentValidation.finalItems != null) {
-                workingItems = cloneItems(segmentValidation.finalItems);
+                finalBoard = cloneItems(segmentValidation.finalItems);
             }
-
-            int boxesOnGoals = segmentValidation != null ? segmentValidation.boxesOnGoals : previousBoxesOnGoals;
-            boolean improved = boxesOnGoals > previousBoxesOnGoals;
-            previousBoxesOnGoals = boxesOnGoals;
-
-            if (segmentValidation != null && segmentValidation.solved) {
+            int boxesOnGoals = countBoxesOnGoals(finalBoard, mapData);
+            int penaltyAfter = corridorPenalty(finalBoard);
+            boolean segmentSolved = segmentValidation != null && segmentValidation.solved;
+            boolean improvedGoals = boxesOnGoals > previousBoxesOnGoals;
+            boolean improvedPenalty = !improvedGoals && penaltyAfter < previousPenalty;
+            boolean adopt = segmentSolved || (!segment.plan.isEmpty() && (improvedGoals || improvedPenalty));
+            int boardHash = Arrays.deepHashCode(finalBoard);
+            if (adopt && !segmentSolved && !improvedGoals && visitedBoards.contains(boardHash)) {
+                adopt = false;
+            }
+            if (!adopt) {
                 break;
             }
-            if (segment.plan.isEmpty() || !improved) {
+            if (!segment.plan.isEmpty()) {
+                combinedPlan.append(segment.plan);
+            }
+            workingItems = finalBoard;
+            visitedBoards.add(boardHash);
+            previousBoxesOnGoals = boxesOnGoals;
+            previousPenalty = penaltyAfter;
+            aggregateStats.maybeUpdateMaxBoxes(boxesOnGoals);
+            if (improvedGoals) {
+                aggregateStats.recordPass2Accepted();
+            } else if (improvedPenalty) {
+                aggregateStats.recordPass2NeutralAccepted();
+                aggregateStats.recordMicroRun();
+            }
+            if (segmentSolved) {
                 break;
             }
         }
@@ -62,7 +87,10 @@ public class SokoBot {
         ReplayValidator.ValidationResult finalValidation = ReplayValidator.validate(mapData, itemsData, finalPlan);
         long solveEnd = System.nanoTime();
         boolean limitHit = solveEnd > deadline && !finalValidation.solved;
-
+        int finalBoxes = finalValidation.finalItems != null
+                ? countBoxesOnGoals(finalValidation.finalItems, mapData)
+                : previousBoxesOnGoals;
+        aggregateStats.setFinalBoxes(finalBoxes);
         aggregateStats.markFinish(solveEnd, limitHit, finalPlan.length(), finalValidation.pushes, 0);
 
         lastStats = aggregateStats.snapshot();
@@ -331,6 +359,47 @@ public class SokoBot {
         return hash;
     }
 
+    private static Coordinate[] extractBoxes(char[][] items) {
+        List<Coordinate> boxes = new ArrayList<>();
+        for (int y = 0; y < items.length; y++) {
+            for (int x = 0; x < items[y].length; x++) {
+                char cell = items[y][x];
+                if (cell == Constants.BOX || cell == Constants.BOX_ON_GOAL) {
+                    boxes.add(new Coordinate(x, y));
+                }
+            }
+        }
+        return boxes.toArray(new Coordinate[0]);
+    }
+
+    private static Coordinate[] extractGoals(char[][] map, char[][] items) {
+        List<Coordinate> goals = new ArrayList<>();
+        int rows = map.length;
+        int cols = rows == 0 ? 0 : map[0].length;
+        boolean[][] seen = new boolean[rows][cols];
+        for (int y = 0; y < rows; y++) {
+            for (int x = 0; x < cols; x++) {
+                if (map[y][x] == Constants.GOAL
+                        || items[y][x] == Constants.BOX_ON_GOAL
+                        || items[y][x] == Constants.PLAYER_ON_GOAL) {
+                    if (!seen[y][x]) {
+                        goals.add(new Coordinate(x, y));
+                        seen[y][x] = true;
+                    }
+                }
+            }
+        }
+        return goals.toArray(new Coordinate[0]);
+    }
+
+    private static int corridorPenalty(char[][] items) {
+        Coordinate[] boxes = extractBoxes(items);
+        if (boxes.length == 0) {
+            return 0;
+        }
+        return Heuristic.corridorEntrancePenalty(boxes);
+    }
+
     private static Coordinate[] copyAndSort(Coordinate[] boxes) {
         Coordinate[] copy = new Coordinate[boxes.length];
         for (int i = 0; i < boxes.length; i++) {
@@ -357,3 +426,6 @@ public class SokoBot {
         }
     }
 }
+
+
+
