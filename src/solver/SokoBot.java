@@ -57,6 +57,15 @@ public class SokoBot {
             boolean improvedGoals = boxesOnGoals > previousBoxesOnGoals;
             boolean improvedPenalty = !improvedGoals && penaltyAfter < previousPenalty;
             boolean adopt = segmentSolved || (!segment.plan.isEmpty() && (improvedGoals || improvedPenalty));
+            System.out.println("segment plan len=" + segment.plan.length()
+                    + " solved=" + segmentSolved
+                    + " boxes=" + boxesOnGoals
+                    + " prevBoxes=" + previousBoxesOnGoals
+                    + " penalty=" + penaltyAfter
+                    + " prevPenalty=" + previousPenalty
+                    + " improvedGoals=" + improvedGoals
+                    + " improvedPenalty=" + improvedPenalty
+                    + " adopt=" + adopt);
             int boardHash = Arrays.deepHashCode(finalBoard);
             if (adopt && !segmentSolved && !improvedGoals && visitedBoards.contains(boardHash)) {
                 adopt = false;
