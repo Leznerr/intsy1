@@ -90,7 +90,8 @@ public final class GBFS {
         Diagnostics.markSearchStart();
 
         long signature = initial.getHash();
-        bestCosts.put(signature, encodeCost(initial));
+        long initialEncoded = encodeCost(initial);
+        bestCosts.put(signature, initialEncoded);
         open.add(initial);
         stats.recordOpenSize(open.size());
 
@@ -281,9 +282,9 @@ public final class GBFS {
                 continue;
             }
 
-            long encodedCost = encodeCost(finalState);
+            long encoded = encodeCost(finalState);
             Long previous = bestCosts.get(childSignature);
-            if (previous != null && previous <= encodedCost) {
+            if (previous != null && previous <= encoded) {
                 stats.recordDuplicatePruned();
                 continue;
             }
@@ -294,7 +295,7 @@ public final class GBFS {
             }
             finalState = finalState.withHeuristic(heuristic);
 
-            bestCosts.put(childSignature, encodeCost(finalState));
+            bestCosts.put(childSignature, encoded);
 
             open.add(finalState);
             updateFrontierCandidates(finalState);

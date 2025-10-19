@@ -83,6 +83,11 @@ public final class RunSolver {
                 ReplayValidator.ValidationResult validation = ReplayValidator.validate(mapData, itemsData, plan);
                 boolean solved = validation.fullyValid && validation.solved;
                 int len = plan.length();
+                if ("original2".equals(mapName)) {
+                    if (len <= 700) {
+                        System.out.println(mapName + " NOTE: plan length <= 700; consider enabling deeper/push-heavier tie-break fallback.");
+                    }
+                }
                 System.out.println(mapName + " len=" + len
                         + " pushes=" + validation.pushes
                         + " time=" + elapsedMs + "ms"
